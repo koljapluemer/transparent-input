@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Transparent Input Vocab Overlay",
+  "version": "1.0.0",
+  "description": "Overlays vocab cards on YouTube videos using Transparent Input data",
+
+  "permissions": [],
+
+  "host_permissions": [
+    "*://www.youtube.com/*",
+    "http://localhost:8000/*"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": ["*://www.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
