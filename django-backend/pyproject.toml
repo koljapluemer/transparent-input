@@ -8,4 +8,7 @@ dependencies = [
     "django>=6.0.6",
     "djangorestframework>=3.17.1",
     "django-cors-headers>=4.7.0",
+    "celery[redis]>=5.4",
+    "spacy>=3.8",
+    "deep-translator>=1.11",
 ]
