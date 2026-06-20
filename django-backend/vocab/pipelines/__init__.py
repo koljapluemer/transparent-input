@@ -1,12 +1,15 @@
 from .italian import ItalianPipeline
+from .vietnamese import VietnamesePipeline
 
 _REGISTRY: dict = {
     ItalianPipeline.name: ItalianPipeline(),
+    VietnamesePipeline.name: VietnamesePipeline(),
 }
 
 # Map language iso3 → pipeline name
 _LANGUAGE_MAP: dict[str, str] = {
     "ita": ItalianPipeline.name,
+    "vie": VietnamesePipeline.name,
 }
 
 

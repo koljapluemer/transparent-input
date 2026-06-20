@@ -11,4 +11,5 @@ dependencies = [
     "celery[redis]>=5.4",
     "spacy>=3.8",
     "deep-translator>=1.11",
+    "underthesea>=6.8",
 ]

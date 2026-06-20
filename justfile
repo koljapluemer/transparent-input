@@ -6,7 +6,7 @@ set dotenv-load := false
 backend-sync:
     cd django-backend && uv sync
 
-# Download spaCy models (run once after install)
+# Download NLP models (run once after install)
 backend-models:
     cd django-backend && uv run python -m spacy download it_core_news_sm
 
