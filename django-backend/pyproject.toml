@@ -12,4 +12,8 @@ dependencies = [
     "spacy>=3.8",
     "deep-translator>=1.11",
     "underthesea>=6.8",
+    "gunicorn>=23.0",
+    "psycopg[binary]>=3.2",
+    "dj-database-url>=2.3",
+    "whitenoise>=6.9",
 ]
