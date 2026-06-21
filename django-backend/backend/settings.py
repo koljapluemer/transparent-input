@@ -84,3 +84,28 @@ CORS_ALLOW_ALL_ORIGINS = True
 CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_TASK_SERIALIZER = 'json'
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'worker': {
+            'format': '[{asctime}] {levelname} {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
+        'stdout': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'worker',
+        },
+    },
+    'loggers': {
+        'vocab': {
+            'handlers': ['stdout'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}

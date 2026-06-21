@@ -5,11 +5,25 @@ const MAX_VISIBLE_CARDS = 3;
 const MIN_CARD_INTERVAL_S = 1;
 const MAX_CARD_INTERVAL_S = 3;
 const PROCESSING_POLL_MS = 5000;
-const PROCESSING_POLL_MAX = 40; // 2 minutes
+const PROCESSING_POLL_MAX = 120; // 10 minutes — guard against a stuck backend job
 const TOOLBAR_HEIGHT = 40; // px — must match height in ensureToolbar CSS
+
+// All possible toolbar states. renderToolbar() is driven exclusively by state.phase.
+const PHASE = {
+  NO_VIDEO:   'no-video',   // not on a watch page — toolbar hidden
+  CHECKING:   'checking',   // GETting /api/videos/:id/ to check backend state
+  LOADING:    'loading',    // fetching caption tracks + supported languages
+  READY:      'ready',      // language selector shown, waiting for user to click Translate
+  SUBMITTING: 'submitting', // fetching subtitles + POSTing to backend
+  POLLING:    'polling',    // waiting for Celery job to finish
+  DONE:       'done',       // segments loaded, vocab overlay active
+  ERROR:      'error',      // terminal failure, Retry available
+};
 
 let state = {
   videoId: null,
+  phase: PHASE.NO_VIDEO,
+  phaseData: {},            // phase-specific payload: {message?, error?, count?}
   segments: [],
   overlay: null,
   toolbar: null,
@@ -21,11 +35,21 @@ let state = {
   activeVocabKeys: new Set(),
   pollTimerId: null,
   pollAttempts: 0,
-  availableLangs: [],  // [{languageCode, trackName, iso3, baseUrl}]
+  availableLangs: [],       // [{languageCode, trackName, iso3, baseUrl}]
   selectedLang: null,
-  toolbarStatus: 'idle', // idle | fetching | submitting | processing | ready | error
-  toolbarMessage: '',
 };
+
+// ── Phase management ──────────────────────────────────────────────────────────
+
+// Every async callback must call setPhase instead of mutating state directly.
+// The videoId guard ensures that callbacks which outlived their video are silently
+// dropped — this is the core fix for the "processing → language-selector" revert bug.
+function setPhase(videoId, phase, data = {}) {
+  if (videoId !== state.videoId) return;
+  state.phase = phase;
+  state.phaseData = data;
+  renderToolbar();
+}
 
 // ── Timestamp / formatting ────────────────────────────────────────────────────
 
@@ -55,25 +79,48 @@ function startPolling(videoId) {
 
   async function poll() {
     if (state.videoId !== videoId) return;
+
     if (state.pollAttempts >= PROCESSING_POLL_MAX) {
       stopPolling();
-      setToolbarStatus('error', 'Processing timed out — try again');
+      setPhase(videoId, PHASE.ERROR, { error: 'Processing timed out — try again' });
       return;
     }
+
     state.pollAttempts++;
-    setToolbarStatus('processing', `Processing… (${state.pollAttempts}/${PROCESSING_POLL_MAX})`);
+    setPhase(videoId, PHASE.POLLING, { count: state.pollAttempts, max: PROCESSING_POLL_MAX });
 
     try {
       const resp = await fetch(`${API_BASE}/videos/${videoId}/`);
-      if (!resp.ok) return;
+
+      if (!resp.ok) {
+        // Transient backend error — keep polling rather than silently dying.
+        state.pollTimerId = setTimeout(poll, PROCESSING_POLL_MS);
+        return;
+      }
+
       const data = await resp.json();
+
       if (data.segments && data.segments.length > 0) {
         stopPolling();
-        loadSegments(data);
+        loadSegments(data, videoId);
+        return;
+      }
+
+      const jobStatus = data.processing?.status;
+
+      if (jobStatus === 'failed') {
+        stopPolling();
+        setPhase(videoId, PHASE.ERROR, { error: data.processing.error || 'Processing failed' });
+        return;
+      }
+
+      if (jobStatus === 'done') {
+        stopPolling();
+        setPhase(videoId, PHASE.ERROR, { error: 'Processing complete — no vocabulary found in this video' });
         return;
       }
     } catch {
-      // backend unreachable, keep polling
+      // Network error — keep polling.
     }
 
     state.pollTimerId = setTimeout(poll, PROCESSING_POLL_MS);
@@ -135,12 +182,15 @@ async function getCaptionTracks(videoId) {
 // ── Language loading ──────────────────────────────────────────────────────────
 
 async function loadAvailableLanguages(videoId) {
-  setToolbarStatus('fetching', 'Loading available subtitle tracks…');
+  setPhase(videoId, PHASE.LOADING);
   try {
     const [tracks, supportedLangs] = await Promise.all([
       getCaptionTracks(videoId),
       fetchSupportedLanguages(),
     ]);
+
+    // Guard: another navigation may have happened while we were fetching.
+    if (state.videoId !== videoId) return;
 
     const subtitleLangToSupported = Object.fromEntries(
       supportedLangs.map(l => [l.subtitle_language, l]),
@@ -159,9 +209,9 @@ async function loadAvailableLanguages(videoId) {
       state.selectedLang = state.availableLangs[0].languageCode;
     }
 
-    setToolbarStatus('idle', '');
+    setPhase(videoId, PHASE.READY);
   } catch {
-    setToolbarStatus('error', 'Failed to load subtitle tracks');
+    setPhase(videoId, PHASE.ERROR, { error: 'Failed to load subtitle tracks' });
   }
 }
 
@@ -172,7 +222,7 @@ async function submitForProcessing() {
   const lang = state.availableLangs.find(l => l.languageCode === state.selectedLang);
   if (!lang || !videoId) return;
 
-  setToolbarStatus('submitting', 'Fetching subtitles…');
+  setPhase(videoId, PHASE.SUBMITTING, { message: 'Fetching subtitles…' });
 
   try {
     const subtitleUrl = lang.baseUrl.replace(/[&?]fmt=[^&]*/g, '') + '&fmt=json3';
@@ -189,7 +239,7 @@ async function submitForProcessing() {
     const transcript = parseJson3(json3);
     if (transcript.length === 0) throw new Error('empty transcript');
 
-    setToolbarStatus('submitting', 'Submitting to backend…');
+    setPhase(videoId, PHASE.SUBMITTING, { message: 'Submitting to backend…' });
 
     const submitResp = await fetch(`${API_BASE}/videos/${videoId}/submit/`, {
       method: 'POST',
@@ -200,16 +250,18 @@ async function submitForProcessing() {
     if (submitResp.ok || submitResp.status === 202) {
       startPolling(videoId);
     } else {
-      setToolbarStatus('error', `Submit failed (HTTP ${submitResp.status})`);
+      setPhase(videoId, PHASE.ERROR, { error: `Submit failed (HTTP ${submitResp.status})` });
     }
   } catch (e) {
-    setToolbarStatus('error', e.message || 'Submit failed');
+    setPhase(videoId, PHASE.ERROR, { error: e.message || 'Submit failed' });
   }
 }
 
 // ── Segment loading ───────────────────────────────────────────────────────────
 
-function loadSegments(data) {
+function loadSegments(data, videoId) {
+  if (state.videoId !== videoId) return;
+
   state.segments = data.segments
     .map(seg => ({
       startSeconds: parseTimestamp(seg.startTimestamp),
@@ -219,11 +271,12 @@ function loadSegments(data) {
     .filter(seg => seg.endSeconds > seg.startSeconds && seg.vocab.length > 0);
 
   if (state.segments.length > 0) {
-    setToolbarStatus('ready', `${state.segments.length} segments`);
+    setPhase(videoId, PHASE.DONE, { count: state.segments.length });
     injectOverlay();
     state.intervalId = setInterval(tick, POLL_INTERVAL_MS);
   } else {
-    setToolbarStatus('idle', '');
+    // Segments field was present but empty after filtering — offer retry.
+    loadAvailableLanguages(videoId);
   }
 }
 
@@ -240,6 +293,7 @@ async function onVideoChange(videoId) {
 
   state.videoId = videoId;
   ensureToolbar();
+  setPhase(videoId, PHASE.CHECKING);
 
   try {
     const resp = await fetch(`${API_BASE}/videos/${videoId}/`);
@@ -257,11 +311,12 @@ async function onVideoChange(videoId) {
     const data = await resp.json();
 
     if (data.segments && data.segments.length > 0) {
-      loadSegments(data);
+      loadSegments(data, videoId);
       return;
     }
 
-    if (data.processing) {
+    const jobStatus = data.processing?.status;
+    if (jobStatus === 'pending' || jobStatus === 'running') {
       startPolling(videoId);
       return;
     }
@@ -323,6 +378,8 @@ function ensureToolbar() {
   renderToolbar();
 }
 
+// Renders toolbar chrome based solely on state.phase + state.phaseData.
+// No other state fields should affect the toolbar layout.
 function renderToolbar() {
   const bar = state.toolbar;
   if (!bar) return;
@@ -338,88 +395,100 @@ function renderToolbar() {
   sep.textContent = '|';
   bar.appendChild(sep);
 
-  const { toolbarStatus: status, toolbarMessage: message } = state;
+  const { phase, phaseData } = state;
 
-  if (status === 'idle' && state.availableLangs.length > 0) {
-    const select = document.createElement('select');
-    select.style.cssText = [
-      'background:#272727',
-      'color:#fff',
-      'border:1px solid #3f3f3f',
-      'border-radius:4px',
-      'padding:2px 6px',
-      'font-size:13px',
-      'cursor:pointer',
-      'outline:none',
-    ].join(';');
-    for (const lang of state.availableLangs) {
-      const opt = document.createElement('option');
-      opt.value = lang.languageCode;
-      opt.textContent = lang.trackName;
-      if (lang.languageCode === state.selectedLang) opt.selected = true;
-      select.appendChild(opt);
+  switch (phase) {
+    case PHASE.CHECKING:
+      bar.appendChild(muted('Checking…'));
+      break;
+
+    case PHASE.LOADING:
+      bar.appendChild(muted('Loading subtitle tracks…'));
+      break;
+
+    case PHASE.READY:
+      if (state.availableLangs.length === 0) {
+        bar.appendChild(muted('No supported subtitle tracks found for this video'));
+      } else {
+        const select = document.createElement('select');
+        select.style.cssText = [
+          'background:#272727',
+          'color:#fff',
+          'border:1px solid #3f3f3f',
+          'border-radius:4px',
+          'padding:2px 6px',
+          'font-size:13px',
+          'cursor:pointer',
+          'outline:none',
+        ].join(';');
+        for (const lang of state.availableLangs) {
+          const opt = document.createElement('option');
+          opt.value = lang.languageCode;
+          opt.textContent = lang.trackName;
+          if (lang.languageCode === state.selectedLang) opt.selected = true;
+          select.appendChild(opt);
+        }
+        select.addEventListener('change', () => { state.selectedLang = select.value; });
+        bar.appendChild(select);
+
+        const btn = document.createElement('button');
+        btn.style.cssText = [
+          'background:#065fd4',
+          'color:#fff',
+          'border:none',
+          'border-radius:4px',
+          'padding:4px 14px',
+          'font-size:13px',
+          'cursor:pointer',
+          'white-space:nowrap',
+          'font-family:inherit',
+        ].join(';');
+        btn.textContent = 'Translate';
+        btn.addEventListener('click', submitForProcessing);
+        bar.appendChild(btn);
+      }
+      break;
+
+    case PHASE.SUBMITTING:
+      bar.appendChild(muted(phaseData.message || 'Submitting…'));
+      break;
+
+    case PHASE.POLLING: {
+      const dot = document.createElement('span');
+      dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:#f90;flex-shrink:0;';
+      bar.appendChild(dot);
+      bar.appendChild(colored('#f90', `Processing… (${phaseData.count}/${phaseData.max})`));
+      break;
     }
-    select.addEventListener('change', () => { state.selectedLang = select.value; });
-    bar.appendChild(select);
 
-    const btn = document.createElement('button');
-    btn.style.cssText = [
-      'background:#065fd4',
-      'color:#fff',
-      'border:none',
-      'border-radius:4px',
-      'padding:4px 14px',
-      'font-size:13px',
-      'cursor:pointer',
-      'white-space:nowrap',
-      'font-family:inherit',
-    ].join(';');
-    btn.textContent = 'Translate';
-    btn.addEventListener('click', submitForProcessing);
-    bar.appendChild(btn);
+    case PHASE.DONE: {
+      const dot = document.createElement('span');
+      dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:#2ba640;flex-shrink:0;';
+      bar.appendChild(dot);
+      bar.appendChild(colored('#2ba640', 'Ready'));
+      bar.appendChild(muted(`${phaseData.count} segments`));
+      break;
+    }
 
-  } else if (status === 'idle') {
-    bar.appendChild(muted('No supported subtitle tracks found for this video'));
-
-  } else if (status === 'fetching' || status === 'submitting') {
-    bar.appendChild(muted(message));
-
-  } else if (status === 'processing') {
-    const dot = document.createElement('span');
-    dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:#f90;flex-shrink:0;';
-    bar.appendChild(dot);
-    bar.appendChild(colored('#f90', message));
-
-  } else if (status === 'ready') {
-    const dot = document.createElement('span');
-    dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:#2ba640;flex-shrink:0;';
-    bar.appendChild(dot);
-    bar.appendChild(colored('#2ba640', 'Ready'));
-    if (message) bar.appendChild(muted(message));
-
-  } else if (status === 'error') {
-    bar.appendChild(colored('#f44336', message || 'Error'));
-    const retry = document.createElement('button');
-    retry.style.cssText = [
-      'background:#272727',
-      'color:#fff',
-      'border:1px solid #3f3f3f',
-      'border-radius:4px',
-      'padding:2px 10px',
-      'font-size:12px',
-      'cursor:pointer',
-      'font-family:inherit',
-    ].join(';');
-    retry.textContent = 'Retry';
-    retry.addEventListener('click', () => loadAvailableLanguages(state.videoId));
-    bar.appendChild(retry);
+    case PHASE.ERROR: {
+      bar.appendChild(colored('#f44336', phaseData.error || 'Error'));
+      const retry = document.createElement('button');
+      retry.style.cssText = [
+        'background:#272727',
+        'color:#fff',
+        'border:1px solid #3f3f3f',
+        'border-radius:4px',
+        'padding:2px 10px',
+        'font-size:12px',
+        'cursor:pointer',
+        'font-family:inherit',
+      ].join(';');
+      retry.textContent = 'Retry';
+      retry.addEventListener('click', () => loadAvailableLanguages(state.videoId));
+      bar.appendChild(retry);
+      break;
+    }
   }
-}
-
-function setToolbarStatus(status, message) {
-  state.toolbarStatus = status;
-  state.toolbarMessage = message;
-  renderToolbar();
 }
 
 function muted(text) {
@@ -456,12 +525,12 @@ function cleanup() {
   state.activeVocabKeys = new Set();
   state.segments = [];
   state.videoId = null;
+  state.phase = PHASE.NO_VIDEO;
+  state.phaseData = {};
   state.currentSegmentIndex = -1;
   state.nextCardAt = null;
   state.availableLangs = [];
   state.selectedLang = null;
-  state.toolbarStatus = 'idle';
-  state.toolbarMessage = '';
 }
 
 function injectOverlay(attempt = 0) {

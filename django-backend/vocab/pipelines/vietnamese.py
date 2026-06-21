@@ -1,8 +1,12 @@
 from __future__ import annotations
+import logging
+import time
 
 from underthesea import pos_tag
 
 from .italian import _fmt
+
+logger = logging.getLogger(__name__)
 
 
 class VietnamesePipeline:
@@ -27,7 +31,9 @@ class VietnamesePipeline:
             cue_words.append(words)
 
         all_words = list(dict.fromkeys(w for words in cue_words for w in words))
+        logger.info(f"nlp_words={len(all_words)} cues={len(transcript)}")
         translations = self._translate_batch(all_words)
+        logger.info(f"translated={len(translations)}/{len(all_words)}")
 
         segments = []
         for i, (cue, words) in enumerate(zip(transcript, cue_words)):
@@ -67,7 +73,10 @@ class VietnamesePipeline:
 
         translator = MyMemoryTranslator(source="vi-VN", target="en-US")
         result: dict[str, str] = {}
-        for chunk in chunks:
+        last_error: Exception | None = None
+        for i, chunk in enumerate(chunks):
+            if i > 0:
+                time.sleep(0.25)  # stay under MyMemory's 5 req/s free-tier limit
             try:
                 translated = translator.translate('\n'.join(chunk))
                 if not translated:
@@ -78,6 +87,10 @@ class VietnamesePipeline:
                         t = parts[i].strip()
                         if t:
                             result[word] = t
-            except Exception:
-                pass
+            except Exception as e:
+                last_error = e
+
+        if not result and last_error is not None:
+            raise RuntimeError(f"Translation failed: {last_error}") from last_error
+
         return result

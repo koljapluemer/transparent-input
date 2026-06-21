@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 
 
 def _fmt(seconds: float) -> str:
@@ -86,7 +87,10 @@ class ItalianPipeline:
 
         translator = MyMemoryTranslator(source="it-IT", target="en-US")
         result: dict[str, str] = {}
-        for chunk in chunks:
+        last_error: Exception | None = None
+        for i, chunk in enumerate(chunks):
+            if i > 0:
+                time.sleep(0.25)  # stay under MyMemory's 5 req/s free-tier limit
             try:
                 translated = translator.translate('\n'.join(chunk))
                 if not translated:
@@ -97,6 +101,10 @@ class ItalianPipeline:
                         t = parts[i].strip()
                         if t:
                             result[word] = t
-            except Exception:
-                pass
+            except Exception as e:
+                last_error = e
+
+        if not result and last_error is not None:
+            raise RuntimeError(f"Translation failed: {last_error}") from last_error
+
         return result
