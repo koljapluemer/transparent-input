@@ -6,11 +6,13 @@ const MIN_CARD_INTERVAL_S = 1;
 const MAX_CARD_INTERVAL_S = 3;
 const PROCESSING_POLL_MS = 5000;
 const PROCESSING_POLL_MAX = 40; // 2 minutes
+const TOOLBAR_HEIGHT = 40; // px — must match height in ensureToolbar CSS
 
 let state = {
   videoId: null,
   segments: [],
   overlay: null,
+  toolbar: null,
   intervalId: null,
   cards: [],
   cardCounter: 0,
@@ -19,6 +21,10 @@ let state = {
   activeVocabKeys: new Set(),
   pollTimerId: null,
   pollAttempts: 0,
+  availableLangs: [],  // [{languageCode, trackName, iso3, baseUrl}]
+  selectedLang: null,
+  toolbarStatus: 'idle', // idle | fetching | submitting | processing | ready | error
+  toolbarMessage: '',
 };
 
 // ── Timestamp / formatting ────────────────────────────────────────────────────
@@ -51,18 +57,19 @@ function startPolling(videoId) {
     if (state.videoId !== videoId) return;
     if (state.pollAttempts >= PROCESSING_POLL_MAX) {
       stopPolling();
+      setToolbarStatus('error', 'Processing timed out — try again');
       return;
     }
     state.pollAttempts++;
+    setToolbarStatus('processing', `Processing… (${state.pollAttempts}/${PROCESSING_POLL_MAX})`);
 
     try {
       const resp = await fetch(`${API_BASE}/videos/${videoId}/`);
       if (!resp.ok) return;
       const data = await resp.json();
-
       if (data.segments && data.segments.length > 0) {
         stopPolling();
-        onVideoChange(videoId);
+        loadSegments(data);
         return;
       }
     } catch {
@@ -75,7 +82,7 @@ function startPolling(videoId) {
   state.pollTimerId = setTimeout(poll, PROCESSING_POLL_MS);
 }
 
-// ── Subtitle extraction from YouTube page ─────────────────────────────────────
+// ── Subtitle / caption helpers ────────────────────────────────────────────────
 
 function parseJson3(json3) {
   const cues = [];
@@ -125,86 +132,84 @@ async function getCaptionTracks(videoId) {
   return data?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
 }
 
-async function submitForProcessing(videoId) {
+// ── Language loading ──────────────────────────────────────────────────────────
+
+async function loadAvailableLanguages(videoId) {
+  setToolbarStatus('fetching', 'Loading available subtitle tracks…');
   try {
-    const tracks = await getCaptionTracks(videoId);
-    console.log('[ti] caption tracks found:', tracks.map(t => t.languageCode));
+    const [tracks, supportedLangs] = await Promise.all([
+      getCaptionTracks(videoId),
+      fetchSupportedLanguages(),
+    ]);
 
-    if (tracks.length === 0) {
-      console.log('[ti] no caption tracks available, skipping');
-      return;
-    }
-
-    const supportedLangs = await fetchSupportedLanguages();
-    const subtitleLangToIso3 = Object.fromEntries(
-      supportedLangs.map(l => [l.subtitle_language, l.iso3])
+    const subtitleLangToSupported = Object.fromEntries(
+      supportedLangs.map(l => [l.subtitle_language, l]),
     );
 
-    const match = tracks.find(t => subtitleLangToIso3[t.languageCode]);
-    if (!match) {
-      console.log('[ti] no supported language match found');
-      return;
+    state.availableLangs = tracks
+      .filter(t => subtitleLangToSupported[t.languageCode])
+      .map(t => ({
+        languageCode: t.languageCode,
+        trackName: t.name?.simpleText || t.languageCode,
+        iso3: subtitleLangToSupported[t.languageCode].iso3,
+        baseUrl: t.baseUrl,
+      }));
+
+    if (state.availableLangs.length > 0) {
+      state.selectedLang = state.availableLangs[0].languageCode;
     }
-    console.log('[ti] matched track:', match.languageCode, '->', subtitleLangToIso3[match.languageCode]);
 
-    const iso3 = subtitleLangToIso3[match.languageCode];
-    const subtitleUrl = match.baseUrl.replace(/[&?]fmt=[^&]*/g, '') + '&fmt=json3';
+    setToolbarStatus('idle', '');
+  } catch {
+    setToolbarStatus('error', 'Failed to load subtitle tracks');
+  }
+}
+
+// ── Submit for processing ─────────────────────────────────────────────────────
+
+async function submitForProcessing() {
+  const videoId = state.videoId;
+  const lang = state.availableLangs.find(l => l.languageCode === state.selectedLang);
+  if (!lang || !videoId) return;
+
+  setToolbarStatus('submitting', 'Fetching subtitles…');
+
+  try {
+    const subtitleUrl = lang.baseUrl.replace(/[&?]fmt=[^&]*/g, '') + '&fmt=json3';
     const subtitleResp = await fetch(subtitleUrl);
-    if (!subtitleResp.ok) return;
+    if (!subtitleResp.ok) throw new Error('subtitle fetch failed');
 
-    const subtitleText = await subtitleResp.text();
     let json3;
     try {
-      json3 = JSON.parse(subtitleText);
+      json3 = JSON.parse(await subtitleResp.text());
     } catch {
-      console.error('[ti] subtitle JSON parse failed');
-      return;
+      throw new Error('subtitle parse failed');
     }
+
     const transcript = parseJson3(json3);
-    if (transcript.length === 0) return;
+    if (transcript.length === 0) throw new Error('empty transcript');
+
+    setToolbarStatus('submitting', 'Submitting to backend…');
 
     const submitResp = await fetch(`${API_BASE}/videos/${videoId}/submit/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ language_iso3: iso3, transcript }),
+      body: JSON.stringify({ language_iso3: lang.iso3, transcript }),
     });
 
     if (submitResp.ok || submitResp.status === 202) {
       startPolling(videoId);
+    } else {
+      setToolbarStatus('error', `Submit failed (HTTP ${submitResp.status})`);
     }
   } catch (e) {
-    console.error('[ti] submitForProcessing error:', e);
+    setToolbarStatus('error', e.message || 'Submit failed');
   }
 }
 
-// ── Core video change handler ─────────────────────────────────────────────────
+// ── Segment loading ───────────────────────────────────────────────────────────
 
-async function onVideoChange(videoId) {
-  cleanup();
-  if (!videoId) return;
-
-  state.videoId = videoId;
-
-  let data;
-  try {
-    const resp = await fetch(`${API_BASE}/videos/${videoId}/`);
-
-    if (resp.status === 404) {
-      submitForProcessing(videoId);
-      return;
-    }
-
-    if (!resp.ok) return;
-    data = await resp.json();
-  } catch {
-    return;
-  }
-
-  if (!data.segments || data.segments.length === 0) {
-    if (data.processing) startPolling(videoId);
-    return;
-  }
-
+function loadSegments(data) {
   state.segments = data.segments
     .map(seg => ({
       startSeconds: parseTimestamp(seg.startTimestamp),
@@ -213,13 +218,225 @@ async function onVideoChange(videoId) {
     }))
     .filter(seg => seg.endSeconds > seg.startSeconds && seg.vocab.length > 0);
 
-  if (state.segments.length === 0) return;
-
-  injectOverlay();
-  state.intervalId = setInterval(tick, POLL_INTERVAL_MS);
+  if (state.segments.length > 0) {
+    setToolbarStatus('ready', `${state.segments.length} segments`);
+    injectOverlay();
+    state.intervalId = setInterval(tick, POLL_INTERVAL_MS);
+  } else {
+    setToolbarStatus('idle', '');
+  }
 }
 
-// ── Overlay ───────────────────────────────────────────────────────────────────
+// ── Core video change handler ─────────────────────────────────────────────────
+
+async function onVideoChange(videoId) {
+  cleanup();
+
+  if (!videoId) {
+    if (state.toolbar) state.toolbar.style.display = 'none';
+    removeToolbarSpacing();
+    return;
+  }
+
+  state.videoId = videoId;
+  ensureToolbar();
+
+  try {
+    const resp = await fetch(`${API_BASE}/videos/${videoId}/`);
+
+    if (resp.status === 404) {
+      loadAvailableLanguages(videoId);
+      return;
+    }
+
+    if (!resp.ok) {
+      loadAvailableLanguages(videoId);
+      return;
+    }
+
+    const data = await resp.json();
+
+    if (data.segments && data.segments.length > 0) {
+      loadSegments(data);
+      return;
+    }
+
+    if (data.processing) {
+      startPolling(videoId);
+      return;
+    }
+
+    loadAvailableLanguages(videoId);
+  } catch {
+    loadAvailableLanguages(videoId);
+  }
+}
+
+// ── Toolbar ───────────────────────────────────────────────────────────────────
+
+function applyToolbarSpacing() {
+  if (document.getElementById('ti-spacing')) return;
+  const style = document.createElement('style');
+  style.id = 'ti-spacing';
+  // Stack our height on top of YouTube's own masthead height variable.
+  style.textContent =
+    '#page-manager{margin-top:calc(var(--ytd-masthead-height,56px) + ' + TOOLBAR_HEIGHT + 'px)!important}';
+  document.head.appendChild(style);
+}
+
+function removeToolbarSpacing() {
+  document.getElementById('ti-spacing')?.remove();
+}
+
+function ensureToolbar() {
+  applyToolbarSpacing();
+
+  if (state.toolbar) {
+    state.toolbar.style.display = 'flex';
+    renderToolbar();
+    return;
+  }
+
+  const bar = document.createElement('div');
+  bar.id = 'ti-toolbar';
+  bar.style.cssText = [
+    'position:fixed',
+    'top:56px',
+    'left:0',
+    'right:0',
+    'z-index:9998',
+    'background:#0f0f0f',
+    'border-bottom:1px solid #272727',
+    'color:#fff',
+    'font-family:Roboto,Arial,sans-serif',
+    'font-size:13px',
+    'display:flex',
+    'align-items:center',
+    'gap:10px',
+    'padding:5px 16px',
+    'box-sizing:border-box',
+    'height:' + TOOLBAR_HEIGHT + 'px',
+  ].join(';');
+
+  document.body.appendChild(bar);
+  state.toolbar = bar;
+  renderToolbar();
+}
+
+function renderToolbar() {
+  const bar = state.toolbar;
+  if (!bar) return;
+  bar.innerHTML = '';
+
+  const label = document.createElement('span');
+  label.style.cssText = 'font-weight:600;color:#909090;white-space:nowrap;margin-right:4px;';
+  label.textContent = 'Transparent Input';
+  bar.appendChild(label);
+
+  const sep = document.createElement('span');
+  sep.style.cssText = 'color:#3f3f3f;';
+  sep.textContent = '|';
+  bar.appendChild(sep);
+
+  const { toolbarStatus: status, toolbarMessage: message } = state;
+
+  if (status === 'idle' && state.availableLangs.length > 0) {
+    const select = document.createElement('select');
+    select.style.cssText = [
+      'background:#272727',
+      'color:#fff',
+      'border:1px solid #3f3f3f',
+      'border-radius:4px',
+      'padding:2px 6px',
+      'font-size:13px',
+      'cursor:pointer',
+      'outline:none',
+    ].join(';');
+    for (const lang of state.availableLangs) {
+      const opt = document.createElement('option');
+      opt.value = lang.languageCode;
+      opt.textContent = lang.trackName;
+      if (lang.languageCode === state.selectedLang) opt.selected = true;
+      select.appendChild(opt);
+    }
+    select.addEventListener('change', () => { state.selectedLang = select.value; });
+    bar.appendChild(select);
+
+    const btn = document.createElement('button');
+    btn.style.cssText = [
+      'background:#065fd4',
+      'color:#fff',
+      'border:none',
+      'border-radius:4px',
+      'padding:4px 14px',
+      'font-size:13px',
+      'cursor:pointer',
+      'white-space:nowrap',
+      'font-family:inherit',
+    ].join(';');
+    btn.textContent = 'Translate';
+    btn.addEventListener('click', submitForProcessing);
+    bar.appendChild(btn);
+
+  } else if (status === 'idle') {
+    bar.appendChild(muted('No supported subtitle tracks found for this video'));
+
+  } else if (status === 'fetching' || status === 'submitting') {
+    bar.appendChild(muted(message));
+
+  } else if (status === 'processing') {
+    const dot = document.createElement('span');
+    dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:#f90;flex-shrink:0;';
+    bar.appendChild(dot);
+    bar.appendChild(colored('#f90', message));
+
+  } else if (status === 'ready') {
+    const dot = document.createElement('span');
+    dot.style.cssText = 'display:inline-block;width:8px;height:8px;border-radius:50%;background:#2ba640;flex-shrink:0;';
+    bar.appendChild(dot);
+    bar.appendChild(colored('#2ba640', 'Ready'));
+    if (message) bar.appendChild(muted(message));
+
+  } else if (status === 'error') {
+    bar.appendChild(colored('#f44336', message || 'Error'));
+    const retry = document.createElement('button');
+    retry.style.cssText = [
+      'background:#272727',
+      'color:#fff',
+      'border:1px solid #3f3f3f',
+      'border-radius:4px',
+      'padding:2px 10px',
+      'font-size:12px',
+      'cursor:pointer',
+      'font-family:inherit',
+    ].join(';');
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => loadAvailableLanguages(state.videoId));
+    bar.appendChild(retry);
+  }
+}
+
+function setToolbarStatus(status, message) {
+  state.toolbarStatus = status;
+  state.toolbarMessage = message;
+  renderToolbar();
+}
+
+function muted(text) {
+  const el = document.createElement('span');
+  el.style.color = '#909090';
+  el.textContent = text;
+  return el;
+}
+
+function colored(color, text) {
+  const el = document.createElement('span');
+  el.style.color = color;
+  el.textContent = text;
+  return el;
+}
+
+// ── Overlay (vocab cards over video) ─────────────────────────────────────────
 
 function cleanup() {
   stopPolling();
@@ -241,6 +458,10 @@ function cleanup() {
   state.videoId = null;
   state.currentSegmentIndex = -1;
   state.nextCardAt = null;
+  state.availableLangs = [];
+  state.selectedLang = null;
+  state.toolbarStatus = 'idle';
+  state.toolbarMessage = '';
 }
 
 function injectOverlay(attempt = 0) {
