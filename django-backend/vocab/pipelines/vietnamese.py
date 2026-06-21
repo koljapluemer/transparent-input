@@ -1,10 +1,10 @@
 from __future__ import annotations
 import logging
-import time
 
 from underthesea import pos_tag
 
 from .italian import _fmt
+from .translation import translate_words
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class VietnamesePipeline:
 
         all_words = list(dict.fromkeys(w for words in cue_words for w in words))
         logger.info(f"nlp_words={len(all_words)} cues={len(transcript)}")
-        translations = self._translate_batch(all_words)
+        translations = translate_words(all_words, "vi")
         logger.info(f"translated={len(translations)}/{len(all_words)}")
 
         segments = []
@@ -49,48 +49,3 @@ class VietnamesePipeline:
                 "vocab": vocab,
             })
         return segments
-
-    def _translate_batch(self, words: list[str]) -> dict[str, str]:
-        from deep_translator import MyMemoryTranslator
-
-        if not words:
-            return {}
-
-        chunks: list[list[str]] = []
-        current: list[str] = []
-        current_len = 0
-        for word in words:
-            added = len(word) + (1 if current else 0)
-            if current_len + added > 490 and current:
-                chunks.append(current)
-                current = [word]
-                current_len = len(word)
-            else:
-                current.append(word)
-                current_len += added
-        if current:
-            chunks.append(current)
-
-        translator = MyMemoryTranslator(source="vi-VN", target="en-US")
-        result: dict[str, str] = {}
-        last_error: Exception | None = None
-        for i, chunk in enumerate(chunks):
-            if i > 0:
-                time.sleep(0.25)  # stay under MyMemory's 5 req/s free-tier limit
-            try:
-                translated = translator.translate('\n'.join(chunk))
-                if not translated:
-                    continue
-                parts = translated.split('\n')
-                for i, word in enumerate(chunk):
-                    if i < len(parts):
-                        t = parts[i].strip()
-                        if t:
-                            result[word] = t
-            except Exception as e:
-                last_error = e
-
-        if not result and last_error is not None:
-            raise RuntimeError(f"Translation failed: {last_error}") from last_error
-
-        return result

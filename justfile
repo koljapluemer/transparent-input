@@ -6,9 +6,13 @@ set dotenv-load := false
 backend-sync:
     cd django-backend && uv sync
 
-# Download NLP models (run once after install)
+# Download spaCy NLP models (run once after install)
 backend-models:
     cd django-backend && uv run python -m spacy download it_core_news_sm
+
+# Download Argos Translate language models for all DB-seeded languages (run once after migrate)
+backend-argos-models:
+    cd django-backend && uv run python manage.py install_argos_models
 
 # Run database migrations
 backend-migrate:
@@ -55,7 +59,7 @@ plugin-lint:
 # ── Setup (run once) ──────────────────────────────────────────────────────────
 
 # Full first-time setup
-setup: backend-sync backend-models backend-migrate
+setup: backend-sync backend-models backend-migrate backend-argos-models
     @echo "Setup complete. Start redis, then run: just backend / just worker / just plugin"
 
 # Start Redis (if not running as a system service)

@@ -47,8 +47,9 @@ In the web service → **Settings** → **Deploy**:
 2. Set **Root Directory** to `django-backend`
 3. In the worker service → **Settings** → **Deploy**, set **Start command**:
    ```
-   uv run celery -A backend worker -Q vps -c 2 --loglevel=info
+   uv run python manage.py install_argos_models && uv run celery -A backend worker -Q vps -c 2 --loglevel=info
    ```
+   > **Note:** Argos models are downloaded to the container's local filesystem on each deploy (Railway storage is ephemeral). Each model is ~150 MB; for 5 languages that's ~750 MB per worker restart. If cold-start time becomes a problem, attach a Railway Volume at the Argos model cache path (`~/.local/share/argos-translate/`) so models persist across deploys.
 4. In the worker service → **Variables**, click **Shared Variables** and link it to the same PostgreSQL and Redis plugins (so it inherits `DATABASE_URL` and `REDIS_URL`)
 5. Add `SECRET_KEY` and `DEBUG=false` here too (copy from the web service, or use Railway's variable references)
 

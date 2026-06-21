@@ -107,5 +107,10 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        # Argos Translate and its dependencies log heavily at INFO level internally.
+        # Suppress everything below WARNING so they don't flood the worker output.
+        'argostranslate': {'handlers': [], 'level': 'WARNING', 'propagate': False},
+        'stanza':         {'handlers': [], 'level': 'WARNING', 'propagate': False},
+        'ctranslate2':    {'handlers': [], 'level': 'WARNING', 'propagate': False},
     },
 }
