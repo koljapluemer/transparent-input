@@ -50,11 +50,15 @@ backend-test:
 
 # Launch Firefox Dev Edition with plugin loaded + auto-reload on save
 plugin:
-    cd browser-plugin && npx web-ext run
+    cd browser-plugin && npm run dev
 
-# Lint the plugin
-plugin-lint:
-    cd browser-plugin && npx web-ext lint
+# Build the plugin for production
+plugin-build:
+    cd browser-plugin && npm run build
+
+# Package the plugin as a zip
+plugin-zip:
+    cd browser-plugin && npm run zip
 
 # ── Setup (run once) ──────────────────────────────────────────────────────────
 
@@ -75,5 +79,5 @@ dev:
     redis-server --daemonize no &
     (cd django-backend && uv run python manage.py runserver) &
     (cd django-backend && uv run celery -A backend worker -Q vps -c 1 --loglevel=info) &
-    (cd browser-plugin && npx web-ext run) &
+    (cd browser-plugin && npm run dev) &
     wait

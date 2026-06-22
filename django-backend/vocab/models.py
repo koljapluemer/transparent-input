@@ -20,6 +20,20 @@ class Video(models.Model):
         return self.youtube_id
 
 
+class VideoTranslation(models.Model):
+    video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name="translations")
+    pipeline = models.CharField(max_length=50)
+    native_language = models.CharField(max_length=10)
+    segments = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("video", "pipeline", "native_language")]
+
+    def __str__(self):
+        return f"{self.video.youtube_id} — {self.pipeline} — {self.target_language}"
+
+
 class ProcessingJob(models.Model):
     STATUS = [
         ("pending", "Pending"),

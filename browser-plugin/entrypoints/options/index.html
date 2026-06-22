@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Transparent Input — Settings</title>
+</head>
+<body>
+  <h1>Transparent Input</h1>
+
+  <section>
+    <h2>Your native language</h2>
+    <label for="primary-native-language">I primarily speak</label>
+    <input id="primary-native-language" type="text" placeholder="Search for a language…" />
+
+    <label style="margin-top:14px;">I also speak (fallbacks — served if a video is already translated)</label>
+    <select id="native-fallbacks" multiple placeholder="Add languages…"></select>
+  </section>
+
+  <hr />
+
+  <section>
+    <h2>AI provider</h2>
+    <div class="radio-group">
+      <label><input type="radio" name="provider" value="openai" checked /> OpenAI</label>
+      <label><input type="radio" name="provider" value="gemini" /> Gemini</label>
+    </div>
+  </section>
+
+  <section>
+    <h2>API key</h2>
+    <div class="key-row">
+      <input type="password" id="api-key" placeholder="Paste your API key here" autocomplete="off" />
+      <button class="btn-ghost" id="show-key-btn">Show</button>
+    </div>
+    <label style="margin-top:12px;">
+      <div class="checkbox-row">
+        <input type="checkbox" id="remember-key" checked />
+        Remember key across browser restarts
+      </div>
+    </label>
+  </section>
+
+  <hr />
+
+  <div class="action-row">
+    <button class="btn-primary" id="save-btn">Save settings</button>
+    <button class="btn-danger" id="remove-key-btn">Remove key</button>
+    <span id="status-msg"></span>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

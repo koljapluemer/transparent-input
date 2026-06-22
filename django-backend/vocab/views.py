@@ -2,9 +2,14 @@ from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Language, Video, ProcessingJob
+from .models import Language, Video, VideoTranslation, ProcessingJob
 from .pipelines import get_pipeline_name_for_iso3, get_pipeline_for_language
-from .serializers import LanguageSerializer, VideoListSerializer, VideoDetailSerializer
+from .serializers import (
+    LanguageSerializer,
+    VideoListSerializer,
+    VideoDetailSerializer,
+    VideoTranslationDetailSerializer,
+)
 
 
 class LanguageViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
@@ -83,3 +88,53 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
             {"job_id": job.id, "status": job.status},
             status=status.HTTP_202_ACCEPTED,
         )
+
+    @action(detail=True, methods=["post"], url_path="translations")
+    def store_translation(self, request, youtube_id=None):
+        pipeline = request.data.get("pipeline")
+        native_language = request.data.get("native_language")
+        segments = request.data.get("segments")
+
+        if not pipeline or not native_language or not isinstance(segments, list):
+            return Response(
+                {"error": "pipeline, native_language, and segments (list) are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        video = self.get_object()
+        _, created = VideoTranslation.objects.update_or_create(
+            video=video,
+            pipeline=pipeline,
+            native_language=native_language,
+            defaults={"segments": segments},
+        )
+
+        return Response(
+            {"status": "stored" if created else "updated"},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"translations/(?P<native_language>[^/.]+)",
+    )
+    def translation_detail(self, request, youtube_id=None, native_language=None):
+        video = self.get_object()
+        try:
+            translation = VideoTranslation.objects.get(
+                video=video,
+                native_language=native_language,
+            )
+        except VideoTranslation.DoesNotExist:
+            return Response(
+                {"error": f"No translation found for language: {native_language}"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except VideoTranslation.MultipleObjectsReturned:
+            translation = VideoTranslation.objects.filter(
+                video=video,
+                native_language=native_language,
+            ).order_by("-created_at").first()
+
+        return Response(VideoTranslationDetailSerializer(translation).data)

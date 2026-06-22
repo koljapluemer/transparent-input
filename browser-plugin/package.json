@@ -1,0 +1,19 @@
+{
+  "name": "transparent-input-plugin",
+  "private": true,
+  "scripts": {
+    "prepare": "wxt prepare",
+    "dev": "wxt -b firefox",
+    "build": "wxt build -b firefox",
+    "zip": "wxt zip -b firefox",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "iso-639-1": "^3.1.3",
+    "tom-select": "^2.4.3"
+  },
+  "devDependencies": {
+    "wxt": "^0.20.6",
+    "typescript": "^5.8.3"
+  }
+}

@@ -1,6 +1,6 @@
 # Technical Findings
 
-Hard-won discoveries from building this. Read before touching the YouTube integration or adding a new language pipeline.
+Hard-won discoveries from building this. Read before touching the YouTube integration, adding a new language pipeline, or modifying the LLM processing path.
 
 ## YouTube Subtitle Extraction
 
@@ -45,7 +45,9 @@ const subtitleUrl = track.baseUrl.replace(/[&?]fmt=[^&]*/g, '') + '&fmt=json3';
 
 ### Caption track language codes are BCP-47, not ISO 639-3
 
-YouTube's caption tracks use BCP-47 codes (`languageCode: "it"`, `"fr-FR"`, `"de-DE"`). The backend's `Language` model stores iso3 codes (`"ita"`, `"fra"`, `"deu"`). The `Language` model has a separate `subtitle_language` field for the BCP-47 code used to match against YouTube tracks. Both fields must be populated when adding a new language.
+YouTube's caption tracks use BCP-47 codes (`languageCode: "it"`, `"fr-FR"`, `"de-DE"`). The backend's `Language` model stores ISO 639-3 codes (`"ita"`, `"fra"`, `"deu"`) as primary keys and also has a separate `subtitle_language` field for the BCP-47 code used to match against YouTube tracks. Both fields must be populated when adding a new language.
+
+`VideoTranslation.native_language` also uses BCP-47 (the user's native language, what translations go *into*). This is a different axis from the video's language.
 
 ## Processing Pipeline
 
@@ -57,7 +59,20 @@ An initial implementation translated each unique word with a separate HTTP reque
 
 The batch approach relies on MyMemory preserving newlines in translated output, which it does for single-word inputs. For multi-word phrases this may break — keep vocab inputs to single lemmas.
 
-## Adding a New Language
+### Meta-segmentation for LLM processing
+
+Sending each raw subtitle cue individually to an LLM is wasteful and produces low-quality vocab (cues are too short to establish context). The client-side LLM path groups cues into *meta-segments* using a dynamic-programming algorithm before calling the LLM.
+
+**Algorithm** (`buildMetaSegments` in `content.ts`):
+- Target word count: 8–50 words per segment, ideally 12–25.
+- Cost function: zero within the ideal range, quadratic penalty outside it.
+- Boundary cost: penalises splitting at overlapping timestamps (`5 + overlap_seconds * 40`).
+- Back-tracks via a `nextIndices` array to reconstruct optimal groupings.
+- Fallback: if no valid segmentation exists (very short video), all cues are merged into one segment.
+
+Ported from `docs/LEGACY_INSPIRATION_SCRIPT.py` (`build_meta_segments`). Keep the two in sync if the algorithm changes.
+
+## Adding a New Language (Server-Side Pipeline)
 
 ### What needs to happen
 
@@ -83,19 +98,23 @@ The batch approach relies on MyMemory preserving newlines in translated output, 
 
 ### Considerations by language type
 
-**Languages with good spaCy support** (French, German, Spanish, Portuguese, Dutch, ...): straightforward — swap the model name and source locale in MyMemoryTranslator. spaCy's `it_core_news_sm` → `fr_core_news_sm` etc. POS tags and the `KEEP_POS = {"NOUN", "VERB", "ADJ"}` filter are universal across spaCy models.
+**Languages with good spaCy support** (French, German, Spanish, Portuguese, Dutch, ...): straightforward — swap the model name and source locale in the pipeline. spaCy's POS tags and the `KEEP_POS = {"NOUN", "VERB", "ADJ"}` filter are universal across spaCy models.
 
 **Languages with large spaCy models** (Chinese, Japanese, Korean): the `_sm` (small) models may give poor POS results; `_md` or `_lg` models are much better but can be 500MB+. These should use `queue = "local"` and run on a machine with adequate RAM, not the VPS. The queue routing in Celery handles this transparently — just set the right `queue` on the pipeline class.
 
-**Languages without spaCy support**: alternatives include [Stanza](https://stanfordnlp.github.io/stanza/) (broad language support, similar POS API) or falling back to frequency-based word selection (pick the N least-common words in the subtitle segment using a word frequency list). The pipeline interface is just `process(transcript) → segments` so the internals are fully swappable.
+**Languages without spaCy support**: alternatives include [Stanza](https://stanfordnlp.github.io/stanza/) (broad language support, similar POS API) or falling back to frequency-based word selection. The pipeline interface is just `process(transcript) → segments` so the internals are fully swappable.
 
-**Languages without free translation**: MyMemory's free tier covers most European languages well. For less-resourced languages, [LibreTranslate](https://libretranslate.com/) (self-hostable) or [Argos Translate](https://github.com/argosopentech/argos-translate) (fully offline) are drop-in alternatives with similar APIs. The translation logic is isolated to `_translate_batch()` in each pipeline class.
-
-**Right-to-left languages** (Arabic, Hebrew): the vocab card display in `content.js` is plain text in a `div` with no explicit text direction. Cards would need `dir="rtl"` or a CSS `direction: rtl` property to render correctly.
+**Note:** The client-side LLM path supports any language the LLM can handle without any backend changes. Server-side pipelines are only needed for users without an API key.
 
 ### The two-queue model
 
-- `"vps"` — lightweight models, low RAM. Currently Italian (spaCy `it_core_news_sm` is ~13MB).
+- `"vps"` — lightweight models, low RAM. Currently Italian (spaCy `it_core_news_sm` ~13MB) and Vietnamese (underthesea).
 - `"local"` — reserved for pipelines that need more resources than a $5 VPS can provide.
 
-Start workers for each queue independently: `just worker` (vps) and `just worker-local` (local). Both connect to the same Redis instance. A pipeline's `queue` attribute determines which worker picks it up.
+Start workers for each queue independently: `just worker` (vps) and `just worker-local` (local).
+
+## Native Language Preferences
+
+The extension stores a `primaryNativeLanguage` (BCP-47, default `"en"`) and an ordered `nativeFallbacks` list. On video load, `available_translations` from the backend is walked in preference order and the first match is served. When a fallback is served, the toolbar notifies the user and offers to reprocess in their primary language.
+
+This means the same video may have multiple `VideoTranslation` rows (one per native language per pipeline). The `unique_together` constraint on `(video, pipeline, native_language)` ensures `update_or_create` is idempotent — reprocessing with the same provider overwrites the previous result cleanly.
