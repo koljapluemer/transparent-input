@@ -1,0 +1,17 @@
+{% extends "vocab/base.html" %}
+
+{% block content %}
+<h1 class="text-2xl font-semibold mb-6">Videos</h1>
+
+<ul class="space-y-2">
+  {% for lang in languages %}
+  <li>
+    <a href="{% url 'video-list' iso3=lang.iso3 %}" class="link link-hover">
+      {{ lang.human_readable }}
+    </a>
+  </li>
+  {% empty %}
+  <li class="text-base-content/50">No languages available yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

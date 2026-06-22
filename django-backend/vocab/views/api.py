@@ -2,9 +2,9 @@ from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Language, Video, VideoTranslation, ProcessingJob
-from .pipelines import get_pipeline_name_for_iso3, get_pipeline_for_language
-from .serializers import (
+from ..models import Language, Video, VideoTranslation, ProcessingJob
+from ..pipelines import get_pipeline_name_for_iso3, get_pipeline_for_language
+from ..serializers import (
     LanguageSerializer,
     VideoListSerializer,
     VideoDetailSerializer,
@@ -85,7 +85,7 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
         )
 
         pipeline = get_pipeline_for_language(pipeline_name)
-        from .tasks import process_video
+        from ..tasks import process_video
         process_video.apply_async(args=[job.id], queue=pipeline.queue)
 
         return Response(
