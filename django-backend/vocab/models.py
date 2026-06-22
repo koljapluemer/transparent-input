@@ -12,12 +12,13 @@ class Language(models.Model):
 
 class Video(models.Model):
     youtube_id = models.CharField(max_length=20, unique=True)
+    title = models.CharField(max_length=500, null=True, blank=True)
     language = models.ForeignKey(Language, on_delete=models.CASCADE, related_name="videos")
     segments = models.JSONField(default=list)
     topics = models.JSONField(null=True, blank=True)
 
     def __str__(self):
-        return self.youtube_id
+        return self.title or self.youtube_id
 
 
 class VideoTranslation(models.Model):

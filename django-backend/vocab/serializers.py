@@ -13,7 +13,7 @@ class VideoListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Video
-        fields = ["youtube_id", "language"]
+        fields = ["youtube_id", "title", "language"]
 
 
 class ProcessingJobSerializer(serializers.ModelSerializer):
@@ -41,7 +41,7 @@ class VideoDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Video
-        fields = ["youtube_id", "language", "segments", "topics", "processing", "available_translations"]
+        fields = ["youtube_id", "title", "language", "segments", "topics", "processing", "available_translations"]
 
     def get_processing(self, obj):
         job = obj.jobs.order_by('-created_at').first()

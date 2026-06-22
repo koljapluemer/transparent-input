@@ -268,7 +268,11 @@ async function onVideoChange(videoId: string | null, ctx: ContentScriptContext):
   await ensureToolbar(
     ctx,
     () => state.videoId && submitWithLLM(state, state.videoId, setPhase, onDone),
-    () => state.videoId && submitForProcessing(state, state.videoId, setPhase, onDone),
+    () => {
+      if (!state.videoId) return;
+      const title = document.title.replace(/ - YouTube$/, '').trim() || undefined;
+      submitForProcessing(state, state.videoId, setPhase, onDone, title);
+    },
   );
 
   checkAndLoadVideo(state, videoId, setPhase, onDone);

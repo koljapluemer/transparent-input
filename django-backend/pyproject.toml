@@ -16,4 +16,5 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "dj-database-url>=2.3",
     "whitenoise>=6.9",
+    "yt-dlp>=2024.1.1",
 ]

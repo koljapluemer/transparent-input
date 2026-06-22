@@ -37,6 +37,7 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
     def submit(self, request, youtube_id=None):
         iso3 = request.data.get("language_iso3")
         transcript = request.data.get("transcript")
+        title = request.data.get("title") or None
 
         if not iso3 or not isinstance(transcript, list):
             return Response(
@@ -60,10 +61,13 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        video, _ = Video.objects.get_or_create(
+        video, created = Video.objects.get_or_create(
             youtube_id=youtube_id,
-            defaults={"language": language, "segments": []},
+            defaults={"language": language, "segments": [], "title": title},
         )
+        if not created and title and not video.title:
+            video.title = title
+            video.save(update_fields=["title"])
 
         # Dedup: return existing job if already pending/running
         existing = ProcessingJob.objects.filter(

@@ -145,7 +145,7 @@ export async function loadAvailableLanguages(
   }
 }
 
-export async function submitForProcessing(state: State, videoId: string, setPhase: SetPhase, onDone?: () => void): Promise<void> {
+export async function submitForProcessing(state: State, videoId: string, setPhase: SetPhase, onDone?: () => void, title?: string): Promise<void> {
   const lang = state.availableLangs.find(l => l.languageCode === state.selectedLang);
   if (!lang || !videoId) return;
 
@@ -156,7 +156,7 @@ export async function submitForProcessing(state: State, videoId: string, setPhas
     const submitResp = await fetch(`${API_BASE}/videos/${videoId}/submit/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ language_iso3: lang.iso3, transcript: cues }),
+      body: JSON.stringify({ language_iso3: lang.iso3, transcript: cues, title: title ?? null }),
     });
     if (submitResp.ok || submitResp.status === 202) {
       startPolling(state, videoId, setPhase, (s, data, vid, sp) => loadSegments(s, data, vid, sp, { onDone }));
