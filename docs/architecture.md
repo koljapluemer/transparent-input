@@ -46,11 +46,27 @@ start vocab overlay
 
 ### Browser Extension (`browser-plugin/`)
 
-Built with **WXT** (wraps Vite) and TypeScript, targeting Firefox MV2. Three entrypoints:
+Built with **WXT** (wraps Vite) + **Vue 3** + **Tailwind CSS v4** + **DaisyUI v5**, targeting Firefox MV2.
 
-- **`entrypoints/content.ts`** — runs in the extension's isolated world. All logic: navigation detection, subtitle extraction, server-side submit/poll cycle, client-side LLM processing, overlay rendering, settings reads from `browser.storage`.
-- **`entrypoints/page-world.ts`** — runs in the page's MAIN JavaScript world. Provides a `postMessage`-based fetch proxy; currently unused (the ANDROID Innertube trick bypasses the need for credentialed fetches).
-- **`entrypoints/options/`** — settings page (`open_in_tab: true`). Uses `iso-639-1` for the full language list and `tom-select` for searchable language selectors. Stores settings in `browser.storage.local` (key optionally in `browser.storage.session` for session-only mode).
+**Content script** (`entrypoints/content/`):
+
+| File | Responsibility |
+|------|---------------|
+| `index.ts` | Entry point: navigation detection, reactive state, Vue mounts, tick loop, card management |
+| `lib/types.ts` | `PHASE` constant + all TypeScript interfaces (`State`, `Card`, `LangEntry`, …) |
+| `lib/settings.ts` | `loadUserSettings()` — reads `browser.storage.local/session` |
+| `lib/subtitles.ts` | YouTube caption fetch: `getCaptionTracks` (Innertube ANDROID), `fetchSubtitleCues`, `parseJson3` |
+| `lib/segmentation.ts` | DP meta-segmentation algorithm (`buildMetaSegments`) |
+| `lib/llm.ts` | LLM calls: `callOpenAI`, `callGemini`, `buildVocabPrompt`, `parseVocabResponse` |
+| `lib/api.ts` | Backend orchestration: `submitForProcessing`, `submitWithLLM`, `loadAvailableLanguages`, `startPolling`, `checkAndLoadVideo` |
+| `lib/utils.ts` | Pure helpers: `parseTimestamp`, `fmtTimestamp`, `nativeLangDisplayName`, `randInterval` |
+| `ui/Toolbar.vue` | Reactive toolbar — renders all phases declaratively; uses Lucide icons |
+| `ui/CardOverlay.vue` | Vocab card pills with `<TransitionGroup>` enter/leave animations |
+
+**Other entrypoints**:
+
+- **`entrypoints/page-world.ts`** — fetch proxy in page MAIN world; currently unused (ANDROID Innertube trick bypasses the need).
+- **`entrypoints/options/`** — settings page (Vue SPA). `App.vue` handles all settings logic. `LanguagePicker.vue` (searchable single-select) and `LanguageTagInput.vue` (searchable multi-select tags) replace the former `tom-select` dependency.
 
 Navigation is tracked via YouTube's `yt-navigate-finish` custom event. The initial page load is handled by an inline call in `main()`.
 
@@ -151,7 +167,7 @@ All pipelines and the client-side LLM produce the same segment shape:
 When the user has an API key configured, the extension runs the full pipeline locally:
 
 1. **Subtitle fetch** — same Innertube ANDROID client path as the server-side flow.
-2. **Meta-segmentation** — a dynamic-programming algorithm (`buildMetaSegments` in `content.ts`) groups raw subtitle cues into segments of 8–50 words, targeting an ideal range of 12–25 words. Penalises splits at overlapping timestamps. Ported from `docs/LEGACY_INSPIRATION_SCRIPT.py`.
+2. **Meta-segmentation** — a dynamic-programming algorithm (`buildMetaSegments` in `content/lib/segmentation.ts`) groups raw subtitle cues into segments of 8–50 words, targeting an ideal range of 12–25 words. Penalises splits at overlapping timestamps. Ported from `docs/LEGACY_INSPIRATION_SCRIPT.py`.
 3. **LLM vocab extraction** — one request per meta-segment. Prompt instructs the model to extract core vocabulary and translate into the user's native language. Supports OpenAI (`gpt-4.1`) and Gemini (`gemini-2.0-flash`). Single retry on failure; failed segments are skipped (not fatal).
 4. **Store** — result POSTed to `POST /api/videos/:id/translations/` with `{pipeline, native_language, segments}`.
 5. **Serve** — segments loaded immediately from memory without waiting for the backend round-trip to complete.
@@ -180,4 +196,4 @@ just dev              # Redis + Django + Celery + plugin all at once
 
 One-time setup: `just setup` (installs backend deps, downloads spaCy model, runs migrations).
 
-Plugin setup: `cd browser-plugin && npm install` (installs WXT, iso-639-1, tom-select).
+Plugin setup: `cd browser-plugin && npm install` (installs WXT, Vue, Tailwind, DaisyUI, Lucide, iso-639-1).
