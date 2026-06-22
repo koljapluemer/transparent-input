@@ -77,9 +77,23 @@ Navigation is tracked via YouTube's `yt-navigate-finish` custom event. The initi
   "nativeFallbacks": ["fr"],
   "provider": "openai",
   "apiKey": "sk-...",
-  "rememberKey": true
+  "rememberKey": true,
+  "accountToken": "abc123..."
 }
 ```
+
+`accountToken` — DRF token obtained from the Django `/profile/` page. Used to authenticate likes and watch-time syncs. Optional; unauthenticated users can still use the extension fully.
+
+**Watch time accumulation** (also stored in `browser.storage.local`):
+```json
+{
+  "pendingWatchTime": {
+    "2026-06-22": { "dQw4w9WgXcQ": 120 }
+  }
+}
+```
+
+Seconds are accumulated per (date, videoId) while `phase === DONE` and the video is playing. The accumulator flushes to `pendingWatchTime` on video navigation. Sync to the backend happens on content script load (if `accountToken` is set) and via the manual **Sync now** button in the options page.
 
 **Toolbar phases** (state machine in `content.ts`):
 | Phase | Meaning |
@@ -98,10 +112,21 @@ Navigation is tracked via YouTube's `yt-navigate-finish` custom event. The initi
 
 Standard Django REST Framework app. Key models:
 
+- **`User`** — custom `AbstractUser` subclass (`AUTH_USER_MODEL = "vocab.User"`). A DRF `Token` is auto-created on registration via a `post_save` signal.
 - **`Language`** — supported *target* languages (videos the extension can process), with both ISO 639-3 (`iso3`) and BCP-47 (`subtitle_language`) codes.
 - **`Video`** — identified by YouTube video ID. `segments` JSONField stores server-side pipeline output (legacy; kept for backward compatibility).
 - **`VideoTranslation`** — stores one set of processed segments keyed by `(video, pipeline, native_language)`. This is the primary storage for client-side LLM results and will eventually replace `Video.segments` for all paths.
 - **`ProcessingJob`** — tracks one server-side processing run: status (`pending → running → done/failed`), which pipeline ran, the raw transcript, and timestamps.
+- **`Like`** — `(user, video)` unique pair; records that a user liked a video.
+- **`WatchSession`** — `(user, video, date)` unique triple; `seconds_watched` is accumulated (not overwritten) on each sync, so multiple syncs on the same day for the same video add up correctly.
+
+**Authentication**: DRF `TokenAuthentication`. Public API endpoints (video lookup, language list, translation store) remain unauthenticated. Likes and watch syncs require `Authorization: Token <token>` header.
+
+**Web interface** (Django templates at `/`):
+- `/register/` — create account
+- `/login/` — log in (Django's built-in `LoginView`)
+- `/logout/` — log out
+- `/profile/` — shows token, liked videos, 30-day watch time bar chart (Chart.js CDN)
 
 ### Celery Worker (`vocab/tasks.py`, `vocab/pipelines/`)
 
@@ -116,13 +141,19 @@ Current pipelines: `ItalianPipeline` (`ita-spacy-mymemory`), `VietnamesePipeline
 
 ## API Endpoints
 
-| Method | URL | Purpose |
-|--------|-----|---------|
-| `GET` | `/api/languages/` | List supported target languages |
-| `GET` | `/api/videos/:id/` | Video detail + available translations list |
-| `POST` | `/api/videos/:id/submit/` | Submit for server-side processing |
-| `POST` | `/api/videos/:id/translations/` | Store client-side LLM result |
-| `GET` | `/api/videos/:id/translations/:native_language/` | Fetch segments for a specific native language |
+| Method | URL | Auth | Purpose |
+|--------|-----|------|---------|
+| `GET` | `/api/languages/` | — | List supported target languages |
+| `GET` | `/api/videos/:id/` | — | Video detail + available translations list |
+| `POST` | `/api/videos/:id/submit/` | — | Submit for server-side processing |
+| `POST` | `/api/videos/:id/translations/` | — | Store client-side LLM result |
+| `GET` | `/api/videos/:id/translations/:native_language/` | — | Fetch segments for a specific native language |
+| `POST` | `/api/videos/:id/like/` | Token | Like a video |
+| `DELETE` | `/api/videos/:id/like/` | Token | Unlike a video |
+| `POST` | `/api/auth/register/` | — | Create account → `{token, username}` |
+| `POST` | `/api/auth/token/` | — | Login → `{token, username}` |
+| `GET` | `/api/profile/` | Token | Current user info |
+| `POST` | `/api/watch/` | Token | Batch upsert watch sessions `[{video_id, seconds, date}]` |
 
 ### GET `/api/videos/:id/` response shape
 
@@ -141,6 +172,32 @@ Current pipelines: `ItalianPipeline` (`ita-spacy-mymemory`), `VietnamesePipeline
 ```
 
 `segments` holds server-side pipeline output (always present if that path has run). `available_translations` lists all `VideoTranslation` rows for this video (client-side LLM results). The extension walks `available_translations` in the user's preference order before falling back to `segments`.
+
+## Data Flow: Watch Time Sync
+
+```
+Extension (content script)              Django Backend
+──────────────────────────              ──────────────
+phase === DONE && !video.paused
+  → state.watchAccumulatorSec += 0.4s (each tick)
+
+yt-navigate-finish (video change)
+  → flush accumulator to
+    browser.storage.local:
+    pendingWatchTime[date][videoId] += N
+
+content script load (new YouTube tab)
+  → if accountToken set:
+    POST /api/watch/             →      upsert WatchSession rows
+      {sessions:[{video_id,               (F('seconds_watched') + N)
+                  seconds, date}]}
+                                 ←      {saved: N, errors: 0}
+    clear pendingWatchTime
+
+(or: manual "Sync now" in options)     same endpoint, same logic
+```
+
+Watch time is counted only while the vocab overlay is active (`phase === DONE`) and the video is not paused. This represents time actively using the extension's target-language learning feature.
 
 ## Data Flow: Segments Format
 

@@ -242,6 +242,25 @@ export async function submitWithLLM(state: State, videoId: string, setPhase: Set
   loadSegments(state, { segments: resultSegments }, videoId, setPhase, { servedNativeLanguage: nativeLang, fromLLM: true, onDone });
 }
 
+export async function syncWatchTime(token: string): Promise<{ synced: number }> {
+  const result = await browser.storage.local.get('pendingWatchTime');
+  const stored = result['pendingWatchTime'] as Record<string, Record<string, number>> | undefined;
+  if (!stored || Object.keys(stored).length === 0) return { synced: 0 };
+
+  const sessions = Object.entries(stored).flatMap(([date, videos]) =>
+    Object.entries(videos).map(([video_id, seconds]) => ({ video_id, seconds, date }))
+  );
+
+  const res = await fetch(`${API_BASE}/watch/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Token ${token}` },
+    body: JSON.stringify({ sessions }),
+  });
+  if (!res.ok) throw new Error(`Watch sync failed: ${res.status}`);
+  await browser.storage.local.remove('pendingWatchTime');
+  return { synced: sessions.length };
+}
+
 export async function checkAndLoadVideo(
   state: State,
   videoId: string,

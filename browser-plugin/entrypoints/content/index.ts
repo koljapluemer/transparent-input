@@ -12,6 +12,7 @@ import {
   submitForProcessing,
   submitWithLLM,
   checkAndLoadVideo,
+  syncWatchTime,
 } from './lib/api';
 import Toolbar from './ui/Toolbar.vue';
 import CardOverlay from './ui/CardOverlay.vue';
@@ -46,6 +47,7 @@ const state = reactive<State>({
   selectedLang: null,
   userSettings: null,
   llmSegments: false,
+  watchAccumulatorSec: 0,
 });
 
 // ── Phase management ──────────────────────────────────────────────────────────
@@ -79,6 +81,7 @@ function dismissCard(id: number): void {
 function tick(): void {
   const video = document.querySelector('video');
   if (!video || !state.overlay) return;
+  tickWatchTime(video);
 
   const current = video.currentTime;
   const now = performance.now();
@@ -103,6 +106,12 @@ function tick(): void {
   const [word, translation] = available[Math.floor(Math.random() * available.length)];
   addCard(word, translation);
   state.nextCardAt = now + randInterval(MIN_CARD_INTERVAL_S, MAX_CARD_INTERVAL_S);
+}
+
+function tickWatchTime(video: HTMLVideoElement): void {
+  if (state.phase === PHASE.DONE && !video.paused) {
+    state.watchAccumulatorSec += POLL_INTERVAL_MS / 1000;
+  }
 }
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
@@ -233,7 +242,21 @@ function waitForElement(selector: string, timeoutMs: number): Promise<Element | 
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
-function cleanup(): void {
+async function cleanup(): Promise<void> {
+  // Flush accumulated watch time before resetting state
+  if (state.videoId && state.watchAccumulatorSec > 0) {
+    const videoId = state.videoId;
+    const seconds = Math.round(state.watchAccumulatorSec);
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      const result = await browser.storage.local.get('pendingWatchTime');
+      const stored = (result['pendingWatchTime'] as Record<string, Record<string, number>>) ?? {};
+      stored[today] ??= {};
+      stored[today][videoId] = (stored[today][videoId] ?? 0) + seconds;
+      await browser.storage.local.set({ pendingWatchTime: stored });
+    } catch { /* storage unavailable — drop the data rather than block cleanup */ }
+  }
+
   stopPolling(state);
   if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
   for (const card of state.cards) clearTimeout(card.timerId);
@@ -242,6 +265,7 @@ function cleanup(): void {
   state.cards = [];
   state.activeVocabKeys = new Set();
   state.segments = [];
+  state.watchAccumulatorSec = 0;
   state.videoId = null;
   state.phase = PHASE.NO_VIDEO;
   state.phaseData = {};
@@ -253,7 +277,7 @@ function cleanup(): void {
 }
 
 async function onVideoChange(videoId: string | null, ctx: ContentScriptContext): Promise<void> {
-  cleanup();
+  await cleanup();
 
   if (!videoId) {
     if (toolbarUi) toolbarUi.shadowHost.style.setProperty('display', 'none', 'important');
@@ -289,7 +313,12 @@ export default defineContentScript({
   runAt: 'document_idle',
   cssInjectionMode: 'ui',
 
-  main(ctx) {
+  async main(ctx) {
+    const initialSettings = await loadUserSettings();
+    if (initialSettings.accountToken) {
+      syncWatchTime(initialSettings.accountToken).catch(() => {});
+    }
+
     document.addEventListener('yt-navigate-finish', () => {
       const id = getVideoId();
       if (id !== state.videoId) onVideoChange(id, ctx);

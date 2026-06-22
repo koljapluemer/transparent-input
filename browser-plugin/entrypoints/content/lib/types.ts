@@ -38,6 +38,7 @@ export interface UserSettings {
   nativeFallbacks: string[];
   provider: 'openai' | 'gemini';
   apiKey: string;
+  accountToken: string;
 }
 
 export interface MetaSegment {
@@ -89,4 +90,5 @@ export interface State {
   selectedLang: string | null;
   userSettings: UserSettings | null;
   llmSegments: boolean;
+  watchAccumulatorSec: number;
 }

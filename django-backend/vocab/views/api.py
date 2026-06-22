@@ -1,8 +1,9 @@
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from ..models import Language, Video, VideoTranslation, ProcessingJob
+from ..models import Language, Like, Video, VideoTranslation, ProcessingJob
 from ..pipelines import get_pipeline_name_for_iso3, get_pipeline_for_language
 from ..serializers import (
     LanguageSerializer,
@@ -142,3 +143,12 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
             ).order_by("-created_at").first()
 
         return Response(VideoTranslationDetailSerializer(translation).data)
+
+    @action(detail=True, methods=["post", "delete"], url_path="like", permission_classes=[IsAuthenticated])
+    def like(self, request, youtube_id=None):
+        video = self.get_object()
+        if request.method == "POST":
+            Like.objects.get_or_create(user=request.user, video=video)
+            return Response({"liked": True}, status=status.HTTP_200_OK)
+        Like.objects.filter(user=request.user, video=video).delete()
+        return Response({"liked": False}, status=status.HTTP_200_OK)
