@@ -52,13 +52,21 @@ backend-test:
 plugin:
     cd browser-plugin && npm run dev
 
-# Build the plugin for production
+# Build the plugin for production (Firefox)
 plugin-build:
     cd browser-plugin && npm run build
 
-# Package the plugin as a zip
+# Package the plugin as a zip (Firefox / AMO)
 plugin-zip:
     cd browser-plugin && npm run zip
+
+# Build the plugin for Chrome
+plugin-build-chrome:
+    cd browser-plugin && npm run build:chrome
+
+# Package the plugin as a zip (Chrome Web Store)
+plugin-zip-chrome:
+    cd browser-plugin && npm run zip:chrome
 
 # ── Setup (run once) ──────────────────────────────────────────────────────────
 

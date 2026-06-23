@@ -1,38 +1,29 @@
 <template>
-  <div class="relative" ref="root">
-    <div
-      class="input input-bordered w-full h-auto min-h-[2.5rem] flex flex-wrap gap-1 p-1.5 cursor-text"
-      @click="inputEl?.focus()"
-    >
-      <span
-        v-for="code in modelValue"
-        :key="code"
-        class="badge badge-primary gap-1"
-      >
+  <div class="tag-input" ref="root">
+    <div class="tag-input__box" @click="inputEl?.focus()">
+      <span v-for="code in modelValue" :key="code" class="tag">
         {{ labelFor(code) }}
-        <button type="button" class="ml-0.5 hover:opacity-70" @click.stop="remove(code)">×</button>
+        <button type="button" class="tag__remove" @click.stop="remove(code)">×</button>
       </span>
       <input
         ref="inputEl"
         type="text"
-        class="flex-1 min-w-[120px] bg-transparent outline-none text-sm"
+        class="tag-input__field"
         :placeholder="modelValue.length === 0 ? placeholder : ''"
         v-model="query"
         @focus="open = true"
         @keydown="onKeydown"
       />
     </div>
-    <ul
-      v-if="open && filtered.length"
-      class="absolute z-10 w-full mt-1 max-h-48 overflow-y-auto menu bg-base-200 rounded-box border border-base-content/10 shadow-lg p-1"
-    >
+    <ul v-if="open && filtered.length" class="dropdown">
       <li
         v-for="(lang, i) in filtered"
         :key="lang.value"
-        :class="{ 'bg-base-300 rounded-lg': i === activeIdx }"
-      >
-        <a @mousedown.prevent="add(lang)" @mouseover="activeIdx = i">{{ lang.text }}</a>
-      </li>
+        class="dropdown__item"
+        :class="{ 'dropdown__item--active': i === activeIdx }"
+        @mousedown.prevent="add(lang)"
+        @mouseover="activeIdx = i"
+      >{{ lang.text }}</li>
     </ul>
   </div>
 </template>
@@ -96,3 +87,61 @@ function onClickOutside(e: MouseEvent) {
 onMounted(() => document.addEventListener('mousedown', onClickOutside));
 onUnmounted(() => document.removeEventListener('mousedown', onClickOutside));
 </script>
+
+<style scoped>
+.tag-input { position: relative; }
+
+.tag-input__box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 5px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: text;
+  transition: border-color var(--transition);
+}
+.tag-input__box:focus-within { border-color: var(--border-focus); }
+
+.tag-input__field {
+  flex: 1;
+  min-width: 120px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: var(--font-base);
+  font-family: var(--font-sans);
+  padding: 2px 4px;
+}
+.tag-input__field::placeholder { color: var(--text-muted); }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(58, 191, 248, 0.15);
+  color: var(--primary);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.tag__remove {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.6;
+  font-family: inherit;
+}
+.tag__remove:hover { opacity: 1; }
+</style>

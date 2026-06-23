@@ -1,90 +1,89 @@
 <template>
-  <div class="min-h-screen bg-base-100 p-8 max-w-lg">
-    <h1 class="text-lg font-semibold mb-8">Transparent Input</h1>
+  <div class="settings">
+    <h1 class="settings__title">Transparent Input</h1>
 
-    <section class="mb-7">
-      <h2 class="text-xs font-semibold text-base-content/50 uppercase tracking-widest mb-3">Your native language</h2>
-      <div class="form-control gap-3">
-        <label class="label pb-0"><span class="label-text">I primarily speak</span></label>
+    <section class="section">
+      <h2 class="section__heading">Your native language</h2>
+      <div class="field-group">
+        <label class="label">I primarily speak</label>
         <LanguagePicker v-model="primaryNativeLanguage" :options="allLanguageOptions" placeholder="Search for a language…" />
 
-        <label class="label pb-0 pt-3"><span class="label-text">I also speak (fallbacks — served if a video is already translated)</span></label>
+        <label class="label" style="margin-top: 12px;">I also speak <span class="text-muted text-sm">(fallbacks — served if a video is already translated)</span></label>
         <LanguageTagInput v-model="nativeFallbacks" :options="allLanguageOptions" placeholder="Add languages you also speak…" />
       </div>
     </section>
 
-    <div class="divider" />
+    <hr class="divider" />
 
-    <section class="mb-7">
-      <h2 class="text-xs font-semibold text-base-content/50 uppercase tracking-widest mb-3">AI provider</h2>
-      <div class="flex gap-6">
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="radio" class="radio radio-primary radio-sm" name="provider" value="openai" v-model="provider" />
-          <span>OpenAI</span>
+    <section class="section">
+      <h2 class="section__heading">AI provider</h2>
+      <div class="radio-group">
+        <label class="radio-label">
+          <input type="radio" name="provider" value="openai" v-model="provider" />
+          OpenAI
         </label>
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="radio" class="radio radio-primary radio-sm" name="provider" value="gemini" v-model="provider" />
-          <span>Gemini</span>
+        <label class="radio-label">
+          <input type="radio" name="provider" value="gemini" v-model="provider" />
+          Gemini
         </label>
       </div>
     </section>
 
-    <section class="mb-7">
-      <h2 class="text-xs font-semibold text-base-content/50 uppercase tracking-widest mb-3">API key</h2>
-      <div class="flex gap-2 items-center">
+    <section class="section">
+      <h2 class="section__heading">API key</h2>
+      <div class="input-row">
         <input
-          class="input input-bordered flex-1"
+          class="input"
+          :class="{ 'input--mono': true }"
           :type="showKey ? 'text' : 'password'"
           v-model="apiKey"
           placeholder="Paste your API key here"
           autocomplete="off"
         />
-        <button class="btn btn-ghost btn-sm" @click="showKey = !showKey">
+        <button class="btn btn--ghost" @click="showKey = !showKey">
           <component :is="showKey ? EyeOff : Eye" :size="16" />
         </button>
       </div>
-      <label class="flex items-center gap-2 mt-3 cursor-pointer">
-        <input type="checkbox" class="checkbox checkbox-primary checkbox-sm" v-model="rememberKey" />
-        <span class="text-sm text-base-content/70">Remember key across browser restarts</span>
+      <label class="checkbox-label">
+        <input type="checkbox" v-model="rememberKey" />
+        Remember key across browser restarts
       </label>
     </section>
 
-    <div class="divider" />
+    <hr class="divider" />
 
-    <section class="mb-7">
-      <h2 class="text-xs font-semibold text-base-content/50 uppercase tracking-widest mb-3">Account</h2>
-      <p class="text-sm text-base-content/60 mb-3">
-        Get a token at <span class="font-mono text-xs bg-base-200 px-1 py-0.5 rounded">localhost:8000/profile/</span>
+    <section class="section">
+      <h2 class="section__heading">Account</h2>
+      <p class="text-muted text-sm" style="margin: 0 0 12px;">
+        Get a token at <code class="code">localhost:8000/profile/</code>
       </p>
-      <div class="flex gap-2 items-center">
+      <div class="input-row">
         <input
-          class="input input-bordered flex-1 font-mono text-sm"
+          class="input input--mono"
           :type="showToken ? 'text' : 'password'"
           v-model="accountToken"
           placeholder="Paste your account token here"
           autocomplete="off"
         />
-        <button class="btn btn-ghost btn-sm" @click="showToken = !showToken">
+        <button class="btn btn--ghost" @click="showToken = !showToken">
           <component :is="showToken ? EyeOff : Eye" :size="16" />
         </button>
       </div>
-      <div class="flex items-center gap-3 mt-3">
-        <button class="btn btn-outline btn-sm" @click="syncNow" :disabled="syncing || !accountToken">
+      <div class="sync-row">
+        <button class="btn btn--outline btn--sm" @click="syncNow" :disabled="syncing || !accountToken">
           {{ syncing ? 'Syncing…' : 'Sync now' }}
         </button>
-        <span v-if="pendingMinutes > 0" class="text-sm text-base-content/60">
-          {{ pendingMinutes }} min pending
-        </span>
-        <span v-if="syncMsg" :class="syncOk ? 'text-success' : 'text-error'" class="text-sm">{{ syncMsg }}</span>
+        <span v-if="pendingMinutes > 0" class="text-muted text-sm">{{ pendingMinutes }} min pending</span>
+        <span v-if="syncMsg" class="text-sm" :class="syncOk ? 'text-success' : 'text-error'">{{ syncMsg }}</span>
       </div>
     </section>
 
-    <div class="divider" />
+    <hr class="divider" />
 
-    <div class="flex gap-3 items-center">
-      <button class="btn btn-primary" @click="save">Save settings</button>
-      <button class="btn btn-outline btn-error btn-sm" @click="removeKey">Remove key</button>
-      <span v-if="statusMsg" :class="statusOk ? 'text-success' : 'text-error'" class="text-sm">{{ statusMsg }}</span>
+    <div class="action-row">
+      <button class="btn btn--primary" @click="save">Save settings</button>
+      <button class="btn btn--danger btn--sm" @click="removeKey">Remove key</button>
+      <span v-if="statusMsg" class="text-sm" :class="statusOk ? 'text-success' : 'text-error'">{{ statusMsg }}</span>
     </div>
   </div>
 </template>
@@ -224,3 +223,87 @@ async function syncNow() {
   }
 }
 </script>
+
+<style scoped>
+.settings {
+  padding: 32px;
+  max-width: 480px;
+}
+
+.settings__title {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  margin: 0 0 32px;
+}
+
+.section { margin-bottom: 24px; }
+
+.section__heading {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin: 0 0 12px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: var(--font-base);
+  color: var(--text-muted);
+}
+
+.radio-group {
+  display: flex;
+  gap: 24px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: var(--font-base);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sync-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.action-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  background: var(--bg-raised);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+}
+</style>

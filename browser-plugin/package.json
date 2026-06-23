@@ -7,6 +7,8 @@
     "dev": "wxt -b firefox",
     "build": "wxt build -b firefox",
     "zip": "wxt zip -b firefox",
+    "build:chrome": "wxt build -b chrome",
+    "zip:chrome": "wxt zip -b chrome",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -15,12 +17,8 @@
     "vue": "^3.5.38"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.1",
     "@wxt-dev/module-vue": "^1.0.3",
-    "autoprefixer": "^10.5.0",
-    "daisyui": "^5.5.23",
     "postcss": "^8.5.15",
-    "tailwindcss": "^4.3.1",
     "typescript": "^5.8.3",
     "wxt": "^0.20.6"
   }

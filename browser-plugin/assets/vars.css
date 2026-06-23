@@ -1,0 +1,36 @@
+/* Design tokens — works in both normal documents (:root) and shadow roots (:host) */
+:root,
+:host {
+  --bg:           #13161f;
+  --bg-raised:    #1c2030;
+  --bg-input:     #1a1e2d;
+  --bg-subtle:    rgba(255, 255, 255, 0.05);
+
+  --border:       rgba(255, 255, 255, 0.1);
+  --border-focus: rgba(58, 191, 248, 0.55);
+
+  --text:         #c5cad8;
+  --text-muted:   rgba(197, 202, 216, 0.5);
+  --text-faint:   rgba(197, 202, 216, 0.18);
+
+  --primary:      #3abff8;
+  --primary-dark: #28aae5;
+  --primary-fg:   #0f1420;
+
+  --success:      #36d399;
+  --warning:      #fbbd23;
+  --error:        #f87272;
+
+  --radius-sm:    4px;
+  --radius:       6px;
+  --radius-pill:  999px;
+
+  --font-sans:    system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:    ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+
+  --font-sm:      12px;
+  --font-base:    14px;
+  --font-lg:      16px;
+
+  --transition:   0.13s ease;
+}

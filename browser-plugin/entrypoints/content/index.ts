@@ -1,4 +1,4 @@
-import '../../assets/main.css';
+import '../../assets/content.css';
 import { reactive, createApp } from 'vue';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
@@ -19,7 +19,7 @@ import CardOverlay from './ui/CardOverlay.vue';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const POLL_INTERVAL_MS = 400;
+const POLL_INTERVAL_MS = 300;
 const CARD_DISPLAY_MS = 4000;
 const MAX_VISIBLE_CARDS = 3;
 const MIN_CARD_INTERVAL_S = 1;
@@ -145,12 +145,14 @@ async function ensureToolbar(ctx: ContentScriptContext, onSubmitLLM: () => void,
     position: 'inline',
     anchor: 'body',
     append: 'first',
-    // WXT resets :host with all:initial !important — override it here (same layer, later = wins)
+    // WXT resets :host with all:initial !important — override it here (same layer, later = wins).
+    // Position is controlled via --ti-top custom property so JS can update it without fighting
+    // !important across the shadow boundary (custom properties pierce shadow DOM cleanly).
     css: `
       :host {
         display: block !important;
         position: fixed !important;
-        top: 56px !important;
+        top: var(--ti-top, 56px) !important;
         left: 0 !important;
         right: 0 !important;
         height: ${TOOLBAR_HEIGHT}px !important;
@@ -175,6 +177,7 @@ async function ensureToolbar(ctx: ContentScriptContext, onSubmitLLM: () => void,
 
   toolbarUi.mount();
   state.toolbar = toolbarUi.shadowHost;
+  applyFullscreenLayout();
 }
 
 // ── Overlay ───────────────────────────────────────────────────────────────────
@@ -206,7 +209,7 @@ async function injectOverlayAndStart(ctx: ContentScriptContext): Promise<void> {
       :host {
         display: block !important;
         position: absolute !important;
-        top: 12px !important;
+        top: var(--ti-ov-top, 12px) !important;
         left: 12px !important;
         max-width: 320px !important;
         pointer-events: none !important;
@@ -224,6 +227,13 @@ async function injectOverlayAndStart(ctx: ContentScriptContext): Promise<void> {
 
   overlayUi.mount();
   state.overlay = overlayUi.shadowHost;
+
+  // Watch for YouTube's own fullscreen class on #movie_player
+  fullscreenObserver?.disconnect();
+  fullscreenObserver = new MutationObserver(applyFullscreenLayout);
+  fullscreenObserver.observe(player, { attributes: true, attributeFilter: ['class'] });
+
+  applyFullscreenLayout();
   state.intervalId = setInterval(tick, POLL_INTERVAL_MS);
 }
 
@@ -238,6 +248,31 @@ function waitForElement(selector: string, timeoutMs: number): Promise<Element | 
     observer.observe(document.body, { childList: true, subtree: true });
     setTimeout(() => { observer.disconnect(); resolve(null); }, timeoutMs);
   });
+}
+
+// ── Fullscreen handling ───────────────────────────────────────────────────────
+//
+// CSS custom properties set on the shadow host propagate into the shadow root
+// via var(), avoiding the !important cascade conflict between inner shadow
+// styles and outer document styles.
+
+let fullscreenObserver: MutationObserver | null = null;
+
+function isFullscreen(): boolean {
+  // YouTube sets .ytp-fullscreen on #movie_player — more reliable than
+  // document.fullscreenElement which can be null in some browser/version combos.
+  return !!document.fullscreenElement ||
+    !!document.querySelector('#movie_player.ytp-fullscreen');
+}
+
+function applyFullscreenLayout(): void {
+  const fs = isFullscreen();
+  if (toolbarUi) {
+    toolbarUi.shadowHost.style.setProperty('--ti-top', fs ? '0px' : '56px');
+  }
+  if (overlayUi) {
+    overlayUi.shadowHost.style.setProperty('--ti-ov-top', fs ? `${TOOLBAR_HEIGHT + 8}px` : '12px');
+  }
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -257,6 +292,8 @@ async function cleanup(): Promise<void> {
     } catch { /* storage unavailable — drop the data rather than block cleanup */ }
   }
 
+  fullscreenObserver?.disconnect();
+  fullscreenObserver = null;
   stopPolling(state);
   if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
   for (const card of state.cards) clearTimeout(card.timerId);
@@ -319,6 +356,7 @@ export default defineContentScript({
       syncWatchTime(initialSettings.accountToken).catch(() => {});
     }
 
+    document.addEventListener('fullscreenchange', applyFullscreenLayout);
     document.addEventListener('yt-navigate-finish', () => {
       const id = getVideoId();
       if (id !== state.videoId) onVideoChange(id, ctx);

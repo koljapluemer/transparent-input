@@ -1,25 +1,23 @@
 <template>
-  <div class="relative" ref="root">
+  <div class="picker" ref="root">
     <input
       type="text"
-      class="input input-bordered w-full"
+      class="input"
       :placeholder="placeholder"
       :value="inputDisplay"
       @focus="open = true"
       @input="onInput"
       @keydown="onKeydown"
     />
-    <ul
-      v-if="open && filtered.length"
-      class="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto menu bg-base-200 rounded-box border border-base-content/10 shadow-lg p-1"
-    >
+    <ul v-if="open && filtered.length" class="dropdown">
       <li
         v-for="(lang, i) in filtered"
         :key="lang.value"
-        :class="{ 'bg-base-300 rounded-lg': i === activeIdx }"
-      >
-        <a @mousedown.prevent="select(lang)" @mouseover="activeIdx = i">{{ lang.text }}</a>
-      </li>
+        class="dropdown__item"
+        :class="{ 'dropdown__item--active': i === activeIdx }"
+        @mousedown.prevent="select(lang)"
+        @mouseover="activeIdx = i"
+      >{{ lang.text }}</li>
     </ul>
   </div>
 </template>
@@ -82,3 +80,7 @@ function onClickOutside(e: MouseEvent) {
 onMounted(() => document.addEventListener('mousedown', onClickOutside));
 onUnmounted(() => document.removeEventListener('mousedown', onClickOutside));
 </script>
+
+<style scoped>
+.picker { position: relative; }
+</style>
