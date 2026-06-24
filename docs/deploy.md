@@ -1,80 +1,60 @@
-# Deploying to Railway
+# Deploying to Render
 
-Two services from the same repo: **web** (Django + gunicorn) and **worker** (Celery, vps queue). Both share a Railway-managed PostgreSQL database and Redis instance.
+Two services from the same repo: **web** (Django + gunicorn) and **worker** (Celery, vps queue). Both share a managed PostgreSQL database and Redis instance, all defined in `django-backend/render.yaml`.
 
 ## Prerequisites
 
-- Railway account (railway.app)
+- Render account (render.com)
 - Repo pushed to GitHub
 
-## 1. Create the project
+## 1. Create the Blueprint
 
-1. Go to railway.app → **New Project** → **Deploy from GitHub repo** → select this repo
-2. Railway auto-detects the repo and creates a first service — this will become the **web** service
-3. In the service settings, set **Root Directory** to `django-backend`
+1. Go to render.com → **New** → **Blueprint**
+2. Connect your GitHub repo
+3. Render detects `django-backend/render.yaml` and previews all four resources (DB, Redis, web, worker)
+4. Click **Apply** — Render provisions everything and kicks off the first deploy
 
-## 2. Add plugins
+That's it for infrastructure. The `render.yaml` handles all service definitions, environment variable wiring, and build/start commands.
 
-In the project view, click **+ Add Service** → **Database**:
+## 2. Set the one manual env var
 
-- Add **PostgreSQL** — Railway injects `DATABASE_URL` automatically
-- Add **Redis** — Railway injects `REDIS_URL` automatically
+`ALLOWED_HOSTS` is marked `sync: false` in the blueprint (its value depends on the domain Render assigns, which isn't known until after the first deploy).
 
-## 3. Set environment variables on the web service
+After the first deploy:
 
-In the web service → **Variables** tab, add:
+1. Go to the **web** service → **Environment** tab
+2. Find `ALLOWED_HOSTS` and set it to your Render public domain, e.g. `transparent-input.onrender.com`
+3. Save — Render redeploys automatically
 
-| Variable | Value |
-|---|---|
-| `SECRET_KEY` | Generate one: `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
-| `DEBUG` | `false` |
-| `ALLOWED_HOSTS` | Your Railway public domain, e.g. `transparent-input.up.railway.app` (find it under Settings → Domains) |
+All other env vars (`DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`) are wired automatically by the blueprint.
 
-`DATABASE_URL` and `REDIS_URL` are injected automatically by the plugins — don't set them manually.
-
-## 4. Set the web service start command
-
-In the web service → **Settings** → **Deploy**:
-
-- **Build command**: `uv sync && uv run python manage.py collectstatic --noinput`
-- **Start command**: `uv run python manage.py migrate && uv run gunicorn backend.wsgi --bind 0.0.0.0:$PORT --workers 2`
-
-(These are already set in `railway.toml` — Railway picks them up automatically if the file is present.)
-
-## 5. Add the worker service
-
-1. In the project view, click **+ Add Service** → **GitHub Repo** → same repo
-2. Set **Root Directory** to `django-backend`
-3. In the worker service → **Settings** → **Deploy**, set **Start command**:
-   ```
-   uv run python manage.py install_argos_models && uv run celery -A backend worker -Q vps -c 2 --loglevel=info
-   ```
-   > **Note:** Argos models are downloaded to the container's local filesystem on each deploy (Railway storage is ephemeral). Each model is ~150 MB; for 5 languages that's ~750 MB per worker restart. If cold-start time becomes a problem, attach a Railway Volume at the Argos model cache path (`~/.local/share/argos-translate/`) so models persist across deploys.
-4. In the worker service → **Variables**, click **Shared Variables** and link it to the same PostgreSQL and Redis plugins (so it inherits `DATABASE_URL` and `REDIS_URL`)
-5. Add `SECRET_KEY` and `DEBUG=false` here too (copy from the web service, or use Railway's variable references)
-
-## 6. Deploy
-
-Click **Deploy** on each service (or push to your main branch if you've set up auto-deploy). Watch the build logs — the first deploy runs migrations automatically via the start command.
-
-## 7. Verify
+## 3. Verify
 
 ```bash
 # Health check
-curl https://your-domain.up.railway.app/api/
+curl https://your-service.onrender.com/api/
 
-# Check the Language rows seeded by migrations
-curl https://your-domain.up.railway.app/api/languages/
+# Check seeded language rows
+curl https://your-service.onrender.com/api/languages/
 # Should return Italian and Vietnamese
 ```
 
-## Updating the extension's backend URL
+## How migrations run
 
-In `browser-plugin/content.js`, update the hardcoded backend URL to your Railway domain before building/publishing the extension.
+`preDeployCommand: uv run python manage.py migrate` in `render.yaml` runs migrations before each new version of the web service goes live. Zero-downtime: the old version keeps serving traffic until migrations complete and the new container passes its health check.
+
+## Notes on the Argos model cache
+
+The worker runs `install_argos_models` on each start. Argos models are downloaded to the container's local filesystem (~150 MB per language, ~750 MB total). If cold-start time becomes a problem, attach a Render Disk to the worker service at `~/.local/share/argos-translate/` so models persist across deploys.
 
 ## Ongoing operations
 
-- **View worker logs**: Railway dashboard → worker service → Logs tab
-- **Scale the worker**: worker service → Settings → increase replicas, or bump `-c 2` to `-c 4` in the start command
-- **Run a Django shell**: Railway dashboard → web service → **Shell** tab (if enabled), or via Railway CLI: `railway run python manage.py shell`
-- **Run migrations after a schema change**: they run automatically on each deploy via the start command
+- **View worker logs**: Render dashboard → `transparent-input-worker` → Logs tab
+- **Scale the worker**: worker service → Settings → increase replicas, or bump `-c 2` to `-c 4` in `render.yaml`
+- **Run a Django shell**: Render dashboard → web service → **Shell** tab
+- **Run migrations manually**: Shell tab → `uv run python manage.py migrate`
+- **Change region**: update `region:` in `render.yaml` for all four resources (must match)
+
+## Updating the extension's backend URL
+
+In `browser-plugin/`, update the hardcoded backend URL to your Render domain before building/publishing the extension.
