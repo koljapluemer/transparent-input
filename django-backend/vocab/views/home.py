@@ -1,6 +1,7 @@
+import langcodes
 from django.views.generic import TemplateView
 
-from ..models import Language
+from ..models import Video
 
 
 class HomeView(TemplateView):
@@ -8,5 +9,16 @@ class HomeView(TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["languages"] = Language.objects.all()
+        codes = (
+            Video.objects
+            .exclude(language__isnull=True)
+            .exclude(language='')
+            .values_list('language', flat=True)
+            .distinct()
+            .order_by('language')
+        )
+        ctx["languages"] = [
+            {"code": code, "human_readable": langcodes.get(code).display_name('en')}
+            for code in codes
+        ]
         return ctx

@@ -6,7 +6,7 @@
 <ul class="space-y-2">
   {% for lang in languages %}
   <li>
-    <a href="{% url 'video-list' iso3=lang.iso3 %}" class="link link-hover">
+    <a href="{% url 'video-list' language=lang.code %}" class="link link-hover">
       {{ lang.human_readable }}
     </a>
   </li>

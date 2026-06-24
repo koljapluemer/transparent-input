@@ -1,19 +1,10 @@
 from django.db import models
 
 
-class Language(models.Model):
-    iso3 = models.CharField(max_length=10, primary_key=True)
-    subtitle_language = models.CharField(max_length=10)
-    human_readable = models.CharField(max_length=100)
-
-    def __str__(self):
-        return self.human_readable
-
-
 class Video(models.Model):
     youtube_id = models.CharField(max_length=20, unique=True)
     title = models.CharField(max_length=500, null=True, blank=True)
-    language = models.ForeignKey(Language, on_delete=models.SET_NULL, null=True, blank=True, related_name="videos")
+    language = models.CharField(max_length=20, null=True, blank=True)
     topics = models.JSONField(null=True, blank=True)
 
     def __str__(self):
@@ -32,5 +23,3 @@ class VideoTranslation(models.Model):
 
     def __str__(self):
         return f"{self.video.youtube_id} — {self.pipeline} — {self.native_language}"
-
-

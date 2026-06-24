@@ -1,16 +1,8 @@
 from rest_framework import serializers
-from .models import Language, Video, VideoTranslation
-
-
-class LanguageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Language
-        fields = ["iso3", "subtitle_language", "human_readable"]
+from .models import Video, VideoTranslation
 
 
 class VideoListSerializer(serializers.ModelSerializer):
-    language = LanguageSerializer(read_only=True)
-
     class Meta:
         model = Video
         fields = ["youtube_id", "title", "language"]
@@ -29,7 +21,6 @@ class VideoTranslationDetailSerializer(serializers.ModelSerializer):
 
 
 class VideoDetailSerializer(serializers.ModelSerializer):
-    language = LanguageSerializer(read_only=True)
     available_translations = serializers.SerializerMethodField()
 
     class Meta:

@@ -22,7 +22,7 @@
           @change="(e) => { state.selectedLang = (e.target as HTMLSelectElement).value; }"
         >
           <option v-for="lang in state.availableLangs" :key="lang.languageCode" :value="lang.languageCode">
-            {{ lang.trackName }}
+            {{ lang.displayName }}
           </option>
         </select>
 

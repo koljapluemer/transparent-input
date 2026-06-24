@@ -1,6 +1,6 @@
 import type { State, LangEntry, AvailableTranslation, Phase, PhaseData } from './types';
 import { PHASE } from './types';
-import { fetchSupportedLanguages, getCaptionTracks, fetchSubtitleCues } from './subtitles';
+import { getCaptionTracks, captionTracksToLangEntries, fetchSubtitleCues } from './subtitles';
 import { buildMetaSegments } from './segmentation';
 import { buildVocabPrompt, callLLM, OPENAI_MODEL, GEMINI_MODEL } from './llm';
 import { parseTimestamp, fmtTimestamp, nativeLangDisplayName } from './utils';
@@ -56,27 +56,11 @@ export async function loadAvailableLanguages(
 ): Promise<void> {
   setPhase(videoId, PHASE.LOADING);
   try {
-    const [tracks, supportedLangs] = await Promise.all([
-      getCaptionTracks(videoId),
-      fetchSupportedLanguages(),
-    ]);
+    const tracks = await getCaptionTracks(videoId);
 
     if (state.videoId !== videoId) return;
 
-    const subtitleLangToSupported = Object.fromEntries(
-      supportedLangs.map(l => [l.subtitle_language, l]),
-    );
-
-    state.availableLangs = tracks
-      .filter(t => subtitleLangToSupported[t.languageCode])
-      .map(t => ({
-        languageCode: t.languageCode,
-        trackName: t.name?.simpleText || t.languageCode,
-        iso3: subtitleLangToSupported[t.languageCode].iso3,
-        humanReadable: subtitleLangToSupported[t.languageCode].human_readable,
-        baseUrl: t.baseUrl,
-      }));
-
+    state.availableLangs = captionTracksToLangEntries(tracks);
     if (state.availableLangs.length > 0) state.selectedLang = state.availableLangs[0].languageCode;
 
     setPhase(videoId, PHASE.READY);
@@ -104,7 +88,7 @@ export async function submitWithLLM(state: State, videoId: string, setPhase: Set
   const metaSegments = buildMetaSegments(cues);
   const nativeLang = settings.primaryNativeLanguage;
   const nativeLangHuman = nativeLangDisplayName(nativeLang);
-  const targetLangHuman = lang.humanReadable || lang.trackName;
+  const targetLangHuman = lang.displayName;
   const pipeline = settings.provider === 'gemini' ? 'gemini-flash' : `openai-${OPENAI_MODEL}`;
 
   setPhase(videoId, PHASE.AI_PROCESSING, { done: 0, total: metaSegments.length });
@@ -154,7 +138,7 @@ export async function submitWithLLM(state: State, videoId: string, setPhase: Set
         pipeline,
         native_language: nativeLang,
         segments: resultSegments,
-        language_iso3: lang.iso3,
+        language: lang.languageCode,
         title,
       }),
     });

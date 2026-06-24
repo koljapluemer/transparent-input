@@ -63,14 +63,18 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { Eye, EyeOff } from 'lucide-vue-next';
-import ISO6391 from 'iso-639-1';
+import { iso6393 } from 'iso-639-3';
 import LanguagePicker from './LanguagePicker.vue';
 import LanguageTagInput from './LanguageTagInput.vue';
 
 const display = new Intl.DisplayNames(['en'], { type: 'language' });
 
-const allLanguageOptions = ISO6391.getAllCodes()
-  .map(code => ({ value: code, text: display.of(code) ?? ISO6391.getName(code) }))
+const allLanguageOptions = iso6393
+  .map(lang => {
+    const code = lang.iso6391 ?? lang.iso6393;
+    return { value: code, text: display.of(code) ?? lang.name };
+  })
+  .filter((opt, idx, arr) => arr.findIndex(o => o.value === opt.value) === idx)
   .sort((a, b) => a.text.localeCompare(b.text));
 
 const primaryNativeLanguage = ref('en');

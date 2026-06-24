@@ -5,5 +5,5 @@ from .views.videos import VideoListView
 
 urlpatterns = [
     path("", HomeView.as_view(), name="home"),
-    path("videos/<str:iso3>/", VideoListView.as_view(), name="video-list"),
+    path("videos/<str:language>/", VideoListView.as_view(), name="video-list"),
 ]

@@ -1,3 +1,3 @@
-from .api import LanguageViewSet, VideoViewSet
+from .api import VideoViewSet
 
-__all__ = ["LanguageViewSet", "VideoViewSet"]
+__all__ = ["VideoViewSet"]

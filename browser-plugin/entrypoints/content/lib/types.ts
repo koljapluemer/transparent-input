@@ -13,9 +13,7 @@ export type Phase = typeof PHASE[keyof typeof PHASE];
 
 export interface LangEntry {
   languageCode: string;
-  trackName: string;
-  iso3: string;
-  humanReadable: string;
+  displayName: string;
   baseUrl: string;
 }
 

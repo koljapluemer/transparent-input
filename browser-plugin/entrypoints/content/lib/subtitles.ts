@@ -14,16 +14,6 @@ export function parseJson3(json3: Record<string, unknown>): RawCue[] {
   return cues;
 }
 
-export async function fetchSupportedLanguages(): Promise<{ iso3: string; subtitle_language: string; human_readable: string }[]> {
-  try {
-    const resp = await fetch(`${import.meta.env.VITE_API_BASE}/languages/`);
-    if (!resp.ok) return [];
-    return resp.json();
-  } catch {
-    return [];
-  }
-}
-
 export async function getCaptionTracks(videoId: string): Promise<{ languageCode: string; name?: { simpleText?: string }; baseUrl: string }[]> {
   const resp = await fetch('https://www.youtube.com/youtubei/v1/player', {
     method: 'POST',
@@ -38,6 +28,17 @@ export async function getCaptionTracks(videoId: string): Promise<{ languageCode:
   if (!resp.ok) return [];
   const data = await resp.json();
   return data?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+}
+
+export function captionTracksToLangEntries(
+  tracks: { languageCode: string; name?: { simpleText?: string }; baseUrl: string }[]
+): LangEntry[] {
+  const display = new Intl.DisplayNames(['en'], { type: 'language' });
+  return tracks.map(t => ({
+    languageCode: t.languageCode,
+    displayName: display.of(t.languageCode) ?? t.languageCode,
+    baseUrl: t.baseUrl,
+  }));
 }
 
 export async function fetchSubtitleCues(lang: LangEntry): Promise<RawCue[]> {

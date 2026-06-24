@@ -2,22 +2,16 @@ from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from ..models import Language, Video, VideoTranslation
+from ..models import Video, VideoTranslation
 from ..serializers import (
-    LanguageSerializer,
     VideoListSerializer,
     VideoDetailSerializer,
     VideoTranslationDetailSerializer,
 )
 
 
-class LanguageViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
-    queryset = Language.objects.all()
-    serializer_class = LanguageSerializer
-
-
 class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
-    queryset = Video.objects.select_related("language").all()
+    queryset = Video.objects.all()
     lookup_field = "youtube_id"
 
     def get_serializer_class(self):
@@ -29,7 +23,7 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
         qs = super().get_queryset()
         language = self.request.query_params.get("language")
         if language:
-            qs = qs.filter(language_id=language)
+            qs = qs.filter(language=language)
         return qs
 
     @action(detail=True, methods=["post"], url_path="translations")
@@ -37,7 +31,7 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
         pipeline = request.data.get("pipeline")
         native_language = request.data.get("native_language")
         segments = request.data.get("segments")
-        language_iso3 = request.data.get("language_iso3")
+        language = request.data.get("language") or None
         title = request.data.get("title") or None
 
         if not pipeline or not native_language or not isinstance(segments, list):
@@ -45,13 +39,6 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
                 {"error": "pipeline, native_language, and segments (list) are required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        language = None
-        if language_iso3:
-            try:
-                language = Language.objects.get(iso3=language_iso3)
-            except Language.DoesNotExist:
-                pass
 
         video, _ = Video.objects.get_or_create(
             youtube_id=youtube_id,

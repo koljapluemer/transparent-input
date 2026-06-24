@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
-from vocab.models import Language, Video
+from vocab.models import Video
 
 
 class Command(BaseCommand):
@@ -27,21 +27,12 @@ class Command(BaseCommand):
                     continue
 
                 data = json.loads(json_file.read_text())
-
-                lang_data = data["language"]
-                language, _ = Language.objects.get_or_create(
-                    iso3=lang_data["iso3"],
-                    defaults={
-                        "subtitle_language": lang_data["subtitleLanguage"],
-                        "human_readable": lang_data["humanReadable"],
-                    },
-                )
+                lang_bcp47 = data["language"]["subtitleLanguage"]
 
                 _, created = Video.objects.update_or_create(
                     youtube_id=data["videoId"],
                     defaults={
-                        "language": language,
-                        "segments": data["segments"],
+                        "language": lang_bcp47,
                         "topics": data.get("topics"),
                     },
                 )

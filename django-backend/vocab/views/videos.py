@@ -1,7 +1,7 @@
-from django.shortcuts import get_object_or_404
+import langcodes
 from django.views.generic import ListView
 
-from ..models import Language, Video
+from ..models import Video
 
 
 class VideoListView(ListView):
@@ -9,10 +9,13 @@ class VideoListView(ListView):
     context_object_name = "videos"
 
     def get_queryset(self):
-        self.language = get_object_or_404(Language, iso3=self.kwargs["iso3"])
-        return Video.objects.filter(language=self.language).order_by("title")
+        self.language_code = self.kwargs["language"]
+        return Video.objects.filter(language=self.language_code).order_by("title")
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["language"] = self.language
+        ctx["language"] = {
+            "code": self.language_code,
+            "human_readable": langcodes.get(self.language_code).display_name('en'),
+        }
         return ctx
