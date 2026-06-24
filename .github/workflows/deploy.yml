@@ -1,0 +1,26 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - django-backend/**
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to droplet
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: deploy
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /home/deploy/transparent-input
+            git pull origin main
+            cd django-backend
+            uv sync --no-dev
+            uv run python manage.py migrate
+            uv run python manage.py collectstatic --noinput
+            sudo systemctl restart gunicorn
