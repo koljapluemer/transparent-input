@@ -7,7 +7,7 @@ import { parseTimestamp, fmtTimestamp, nativeLangDisplayName } from './utils';
 
 export { OPENAI_MODEL, GEMINI_MODEL };
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = import.meta.env.VITE_API_BASE;
 const PROCESSING_POLL_MS = 5000;
 const PROCESSING_POLL_MAX = 120;
 const MIN_EXPORT_SEGMENTS = 3;

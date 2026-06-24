@@ -10,12 +10,12 @@
 
 ## Firefox Add-ons (AMO)
 
-- [ ] **Icons** — create `browser-plugin/public/icon/{16,32,48,96,128}.png`; WXT picks them up automatically
-- [ ] **Replace gecko ID** if you change the extension domain (`wxt.config.ts` → `browser_specific_settings.gecko.id`)
-- [ ] **Source zip** — AMO requires submitting the source when the build is bundled; run `wxt zip --source` and upload the generated source zip alongside the extension zip
-- [ ] **Reproducible build note** — AMO reviewers will try to build from source; add a `browser-plugin/.nvmrc` (pin Node version) and note the exact build command in the submission notes (`npm install && npm run zip`)
-- [ ] **OpenAI / Gemini permissions** — be ready to explain in the submission notes why `api.openai.com` and `generativelanguage.googleapis.com` are in `host_permissions` (user-provided API key, data not stored by extension beyond the API call)
-- [ ] **Store listing copy** — AMO requires a summary (≤ 250 chars) and description
+- [x] **Icons** — `browser-plugin/public/icon/{16,32,48,96,128}.png` generated from `assets/icon/base.png`
+- [x] **Replace gecko ID** — current ID is `transparent-input@transparent-input.app`; update in `wxt.config.ts` only if you change the extension domain
+- [ ] **Source zip** — AMO requires submitting the source when the build is bundled; run `wxt zip --sources` and upload the generated source zip alongside the extension zip
+- [x] **Reproducible build note** — `browser-plugin/.nvmrc` created (Node 25.4.0); build command for submission notes: `npm install && npm run zip`
+- [x] **OpenAI / Gemini permissions** — justification text written in `docs/amo-listing.md`
+- [x] **Store listing copy** — summary and description written in `docs/amo-listing.md`
 - [ ] **Screenshots** — at least one screenshot of the overlay in action on a YouTube video
 
 ## Chrome Web Store

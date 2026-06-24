@@ -15,7 +15,7 @@ export function parseJson3(json3: Record<string, unknown>): RawCue[] {
 }
 
 export async function fetchSupportedLanguages(): Promise<{ iso3: string; subtitle_language: string; human_readable: string }[]> {
-  const resp = await fetch(`${import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api'}/languages/`);
+  const resp = await fetch(`${import.meta.env.VITE_API_BASE}/languages/`);
   if (!resp.ok) return [];
   return resp.json();
 }
