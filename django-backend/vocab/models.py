@@ -1,35 +1,4 @@
-from django.conf import settings
-from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
-
-
-class EmailUserManager(BaseUserManager):
-    def create_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError("Email address is required")
-        email = self.normalize_email(email)
-        user = self.model(email=email, **extra_fields)
-        user.set_password(password)
-        user.save(using=self._db)
-        return user
-
-    def create_superuser(self, email, password=None, **extra_fields):
-        extra_fields.setdefault("is_staff", True)
-        extra_fields.setdefault("is_superuser", True)
-        return self.create_user(email, password, **extra_fields)
-
-
-class User(AbstractUser):
-    username = None
-    email = models.EmailField(unique=True)
-
-    USERNAME_FIELD = "email"
-    REQUIRED_FIELDS = []
-
-    objects = EmailUserManager()
-
-    def __str__(self):
-        return self.email
 
 
 class Language(models.Model):
@@ -63,7 +32,7 @@ class VideoTranslation(models.Model):
         unique_together = [("video", "pipeline", "native_language")]
 
     def __str__(self):
-        return f"{self.video.youtube_id} — {self.pipeline} — {self.target_language}"
+        return f"{self.video.youtube_id} — {self.pipeline} — {self.native_language}"
 
 
 class ProcessingJob(models.Model):
@@ -85,28 +54,3 @@ class ProcessingJob(models.Model):
 
     def __str__(self):
         return f"{self.video.youtube_id} — {self.pipeline} — {self.status}"
-
-
-class Like(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="likes")
-    video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name="likes")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = [("user", "video")]
-
-    def __str__(self):
-        return f"{self.user} likes {self.video}"
-
-
-class WatchSession(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="watch_sessions")
-    video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name="watch_sessions")
-    seconds_watched = models.PositiveIntegerField(default=0)
-    date = models.DateField()
-
-    class Meta:
-        unique_together = [("user", "video", "date")]
-
-    def __str__(self):
-        return f"{self.user} watched {self.video} for {self.seconds_watched}s on {self.date}"

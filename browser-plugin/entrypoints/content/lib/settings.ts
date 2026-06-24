@@ -2,7 +2,7 @@ import type { UserSettings } from './types';
 
 export async function loadUserSettings(): Promise<UserSettings> {
   const local = await browser.storage.local.get([
-    'primaryNativeLanguage', 'nativeFallbacks', 'provider', 'apiKey', 'rememberKey', 'accountToken',
+    'primaryNativeLanguage', 'nativeFallbacks', 'provider', 'apiKey', 'rememberKey',
   ]);
   let apiKey = (local.apiKey as string) || '';
   if (!apiKey) {
@@ -18,6 +18,5 @@ export async function loadUserSettings(): Promise<UserSettings> {
     nativeFallbacks: Array.isArray(local.nativeFallbacks) ? (local.nativeFallbacks as string[]) : [],
     provider: ((local.provider as string) === 'gemini') ? 'gemini' : 'openai',
     apiKey,
-    accountToken: (local.accountToken as string) || '',
   };
 }

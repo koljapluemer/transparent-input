@@ -12,7 +12,6 @@ import {
   submitForProcessing,
   submitWithLLM,
   checkAndLoadVideo,
-  syncWatchTime,
 } from './lib/api';
 import Toolbar from './ui/Toolbar.vue';
 import CardOverlay from './ui/CardOverlay.vue';
@@ -47,7 +46,6 @@ const state = reactive<State>({
   selectedLang: null,
   userSettings: null,
   llmSegments: false,
-  watchAccumulatorSec: 0,
 });
 
 // ── Phase management ──────────────────────────────────────────────────────────
@@ -81,7 +79,6 @@ function dismissCard(id: number): void {
 function tick(): void {
   const video = document.querySelector('video');
   if (!video || !state.overlay) return;
-  tickWatchTime(video);
 
   const current = video.currentTime;
   const now = performance.now();
@@ -106,12 +103,6 @@ function tick(): void {
   const [word, translation] = available[Math.floor(Math.random() * available.length)];
   addCard(word, translation);
   state.nextCardAt = now + randInterval(MIN_CARD_INTERVAL_S, MAX_CARD_INTERVAL_S);
-}
-
-function tickWatchTime(video: HTMLVideoElement): void {
-  if (state.phase === PHASE.DONE && !video.paused) {
-    state.watchAccumulatorSec += POLL_INTERVAL_MS / 1000;
-  }
 }
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
@@ -278,20 +269,6 @@ function applyFullscreenLayout(): void {
 // ── Navigation ────────────────────────────────────────────────────────────────
 
 async function cleanup(): Promise<void> {
-  // Flush accumulated watch time before resetting state
-  if (state.videoId && state.watchAccumulatorSec > 0) {
-    const videoId = state.videoId;
-    const seconds = Math.round(state.watchAccumulatorSec);
-    const today = new Date().toISOString().slice(0, 10);
-    try {
-      const result = await browser.storage.local.get('pendingWatchTime');
-      const stored = (result['pendingWatchTime'] as Record<string, Record<string, number>>) ?? {};
-      stored[today] ??= {};
-      stored[today][videoId] = (stored[today][videoId] ?? 0) + seconds;
-      await browser.storage.local.set({ pendingWatchTime: stored });
-    } catch { /* storage unavailable — drop the data rather than block cleanup */ }
-  }
-
   fullscreenObserver?.disconnect();
   fullscreenObserver = null;
   stopPolling(state);
@@ -302,7 +279,6 @@ async function cleanup(): Promise<void> {
   state.cards = [];
   state.activeVocabKeys = new Set();
   state.segments = [];
-  state.watchAccumulatorSec = 0;
   state.videoId = null;
   state.phase = PHASE.NO_VIDEO;
   state.phaseData = {};
@@ -351,11 +327,6 @@ export default defineContentScript({
   cssInjectionMode: 'ui',
 
   async main(ctx) {
-    const initialSettings = await loadUserSettings();
-    if (initialSettings.accountToken) {
-      syncWatchTime(initialSettings.accountToken).catch(() => {});
-    }
-
     document.addEventListener('fullscreenchange', applyFullscreenLayout);
     document.addEventListener('yt-navigate-finish', () => {
       const id = getVideoId();
