@@ -17,6 +17,7 @@ jobs:
           username: deploy
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
+            set -a && source /etc/transparent-input.env && set +a
             cd /home/deploy/transparent-input
             git pull origin main
             cd django-backend

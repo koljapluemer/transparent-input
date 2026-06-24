@@ -130,6 +130,7 @@ sudo chmod 600 /etc/transparent-input.env
 ### 6. Run migrations and collect static
 
 ```bash
+set -a && source /etc/transparent-input.env && set +a
 cd /home/deploy/transparent-input/django-backend
 uv run python manage.py migrate
 uv run python manage.py collectstatic --noinput
@@ -183,7 +184,7 @@ cat ~/.ssh/deploy_key.pub >> ~/.ssh/authorized_keys
 cat ~/.ssh/deploy_key   # copy this — it's the private key for GitHub
 ```
 
-In GitHub → repo → **Settings → Secrets and variables → Actions**, add:
+In **github.com/koljapluemer/transparent-input → Settings → Secrets and variables → Actions → New repository secret**, add two secrets:
 - `DROPLET_HOST` — your droplet's IP address
 - `DEPLOY_SSH_KEY` — the private key copied above
 
@@ -200,6 +201,7 @@ All commands below assume you are **SSH'd in as deploy**.
 - **Postgres shell**: `sudo -u postgres psql transparent_input`
 - **Manual deploy**:
   ```bash
+  set -a && source /etc/transparent-input.env && set +a
   cd ~/transparent-input
   git pull
   cd django-backend
