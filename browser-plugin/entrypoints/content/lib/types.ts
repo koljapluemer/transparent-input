@@ -5,7 +5,6 @@ export const PHASE = {
   READY:         'ready',
   SUBMITTING:    'submitting',
   AI_PROCESSING: 'ai-processing',
-  POLLING:       'polling',
   DONE:          'done',
   ERROR:         'error',
 } as const;
@@ -51,7 +50,6 @@ export interface PhaseData {
   message?: string;
   error?: string;
   count?: number;
-  max?: number;
   done?: number;
   total?: number;
   servedNativeLanguage?: string | null;
@@ -83,8 +81,6 @@ export interface State {
   currentSegmentIndex: number;
   nextCardAt: number | null;
   activeVocabKeys: Set<string>;
-  pollTimerId: ReturnType<typeof setTimeout> | null;
-  pollAttempts: number;
   availableLangs: LangEntry[];
   selectedLang: string | null;
   userSettings: UserSettings | null;

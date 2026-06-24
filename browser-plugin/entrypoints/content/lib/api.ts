@@ -8,69 +8,9 @@ import { parseTimestamp, fmtTimestamp, nativeLangDisplayName } from './utils';
 export { OPENAI_MODEL, GEMINI_MODEL };
 
 const API_BASE = import.meta.env.VITE_API_BASE;
-const PROCESSING_POLL_MS = 5000;
-const PROCESSING_POLL_MAX = 120;
 const MIN_EXPORT_SEGMENTS = 3;
 
 export type SetPhase = (videoId: string, phase: Phase, data?: PhaseData) => void;
-
-export function stopPolling(state: State): void {
-  if (state.pollTimerId) {
-    clearTimeout(state.pollTimerId);
-    state.pollTimerId = null;
-  }
-  state.pollAttempts = 0;
-}
-
-export function startPolling(state: State, videoId: string, setPhase: SetPhase, onSegmentsLoaded: LoadSegmentsFn): void {
-  stopPolling(state);
-
-  async function poll(): Promise<void> {
-    if (state.videoId !== videoId) return;
-
-    if (state.pollAttempts >= PROCESSING_POLL_MAX) {
-      stopPolling(state);
-      setPhase(videoId, PHASE.ERROR, { error: 'Processing timed out — try again' });
-      return;
-    }
-
-    state.pollAttempts++;
-    setPhase(videoId, PHASE.POLLING, { count: state.pollAttempts, max: PROCESSING_POLL_MAX });
-
-    try {
-      const resp = await fetch(`${API_BASE}/videos/${videoId}/`);
-      if (!resp.ok) {
-        state.pollTimerId = setTimeout(poll, PROCESSING_POLL_MS);
-        return;
-      }
-      const data = await resp.json();
-
-      if (data.segments?.length > 0) {
-        stopPolling(state);
-        onSegmentsLoaded(state, data, videoId, setPhase);
-        return;
-      }
-
-      const jobStatus = data.processing?.status;
-      if (jobStatus === 'failed') {
-        stopPolling(state);
-        setPhase(videoId, PHASE.ERROR, { error: data.processing.error || 'Processing failed' });
-        return;
-      }
-      if (jobStatus === 'done') {
-        stopPolling(state);
-        setPhase(videoId, PHASE.ERROR, { error: 'Processing complete — no vocabulary found in this video' });
-        return;
-      }
-    } catch {
-      // Network error — keep polling.
-    }
-
-    state.pollTimerId = setTimeout(poll, PROCESSING_POLL_MS);
-  }
-
-  state.pollTimerId = setTimeout(poll, PROCESSING_POLL_MS);
-}
 
 type LoadSegmentsFn = (
   state: State,
@@ -145,29 +85,6 @@ export async function loadAvailableLanguages(
   }
 }
 
-export async function submitForProcessing(state: State, videoId: string, setPhase: SetPhase, onDone?: () => void, title?: string): Promise<void> {
-  const lang = state.availableLangs.find(l => l.languageCode === state.selectedLang);
-  if (!lang || !videoId) return;
-
-  setPhase(videoId, PHASE.SUBMITTING, { message: 'Fetching subtitles…' });
-  try {
-    const cues = await fetchSubtitleCues(lang);
-    setPhase(videoId, PHASE.SUBMITTING, { message: 'Submitting to backend…' });
-    const submitResp = await fetch(`${API_BASE}/videos/${videoId}/submit/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ language_iso3: lang.iso3, transcript: cues, title: title ?? null }),
-    });
-    if (submitResp.ok || submitResp.status === 202) {
-      startPolling(state, videoId, setPhase, (s, data, vid, sp) => loadSegments(s, data, vid, sp, { onDone }));
-    } else {
-      setPhase(videoId, PHASE.ERROR, { error: `Submit failed (HTTP ${submitResp.status})` });
-    }
-  } catch (e) {
-    setPhase(videoId, PHASE.ERROR, { error: (e as Error).message || 'Submit failed' });
-  }
-}
-
 export async function submitWithLLM(state: State, videoId: string, setPhase: SetPhase, onDone?: () => void): Promise<void> {
   const lang = state.availableLangs.find(l => l.languageCode === state.selectedLang);
   const settings = state.userSettings;
@@ -228,11 +145,18 @@ export async function submitWithLLM(state: State, videoId: string, setPhase: Set
     return;
   }
 
+  const title = document.title.replace(/ - YouTube$/, '').trim() || null;
   try {
     await fetch(`${API_BASE}/videos/${videoId}/translations/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pipeline, native_language: nativeLang, segments: resultSegments }),
+      body: JSON.stringify({
+        pipeline,
+        native_language: nativeLang,
+        segments: resultSegments,
+        language_iso3: lang.iso3,
+        title,
+      }),
     });
   } catch (e) {
     console.warn('[TI] Failed to store translation on backend:', (e as Error).message);
@@ -278,17 +202,6 @@ export async function checkAndLoadVideo(
           break;
         }
       }
-    }
-
-    if (data.segments?.length > 0) {
-      loadSegments(state, data, videoId, setPhase, { onDone });
-      return;
-    }
-
-    const jobStatus = data.processing?.status;
-    if (jobStatus === 'pending' || jobStatus === 'running') {
-      startPolling(state, videoId, setPhase, (s, d, vid, sp) => loadSegments(s, d, vid, sp, { onDone }));
-      return;
     }
 
     loadAvailableLanguages(state, videoId, setPhase, onDone);

@@ -6,14 +6,6 @@ set dotenv-load := false
 backend-sync:
     cd django-backend && uv sync
 
-# Download spaCy NLP models (run once after install)
-backend-models:
-    cd django-backend && uv run python -m spacy download it_core_news_sm
-
-# Download Argos Translate language models for all DB-seeded languages (run once after migrate)
-backend-argos-models:
-    cd django-backend && uv run python manage.py install_argos_models
-
 # Run database migrations
 backend-migrate:
     cd django-backend && uv run python manage.py migrate
@@ -25,14 +17,6 @@ backend-makemigrations:
 # Run the Django dev server
 backend:
     cd django-backend && uv run python manage.py runserver
-
-# Run the Celery worker (VPS queue)
-worker:
-    cd django-backend && uv run celery -A backend worker -Q vps -c 1 --loglevel=info
-
-# Run the Celery worker (local-PC queue, for heavy models)
-worker-local:
-    cd django-backend && uv run celery -A backend worker -Q local -c 2 --loglevel=info
 
 # Django system check
 backend-check:
@@ -71,21 +55,15 @@ plugin-zip-chrome:
 # ── Setup (run once) ──────────────────────────────────────────────────────────
 
 # Full first-time setup
-setup: backend-sync backend-models backend-migrate backend-argos-models
-    @echo "Setup complete. Start redis, then run: just backend / just worker / just plugin"
-
-# Start Redis (if not running as a system service)
-redis:
-    redis-server
+setup: backend-sync backend-migrate
+    @echo "Setup complete. Run: just backend / just plugin"
 
 # ── Dev ───────────────────────────────────────────────────────────────────────
 
-# Start everything: Redis + Django + Celery worker + Firefox plugin (Ctrl-C stops all)
+# Start everything: Django + Firefox plugin (Ctrl-C stops all)
 dev:
     #!/usr/bin/env bash
     trap 'kill 0' SIGINT SIGTERM EXIT
-    redis-server --daemonize no &
     (cd django-backend && uv run python manage.py runserver) &
-    (cd django-backend && uv run celery -A backend worker -Q vps -c 1 --loglevel=info) &
     (cd browser-plugin && npm run dev) &
     wait

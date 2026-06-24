@@ -2,8 +2,7 @@ from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from ..models import Language, Video, VideoTranslation, ProcessingJob
-from ..pipelines import get_pipeline_name_for_iso3, get_pipeline_for_language
+from ..models import Language, Video, VideoTranslation
 from ..serializers import (
     LanguageSerializer,
     VideoListSerializer,
@@ -33,71 +32,13 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
             qs = qs.filter(language_id=language)
         return qs
 
-    @action(detail=True, methods=["post"], url_path="submit")
-    def submit(self, request, youtube_id=None):
-        iso3 = request.data.get("language_iso3")
-        transcript = request.data.get("transcript")
-        title = request.data.get("title") or None
-
-        if not iso3 or not isinstance(transcript, list):
-            return Response(
-                {"error": "language_iso3 and transcript are required"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            language = Language.objects.get(iso3=iso3)
-        except Language.DoesNotExist:
-            return Response(
-                {"error": f"Unknown language: {iso3}"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        try:
-            pipeline_name = get_pipeline_name_for_iso3(iso3)
-        except KeyError:
-            return Response(
-                {"error": f"No processing pipeline available for language: {iso3}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        video, created = Video.objects.get_or_create(
-            youtube_id=youtube_id,
-            defaults={"language": language, "segments": [], "title": title},
-        )
-        if not created and title and not video.title:
-            video.title = title
-            video.save(update_fields=["title"])
-
-        # Dedup: return existing job if already pending/running
-        existing = ProcessingJob.objects.filter(
-            video=video,
-            pipeline=pipeline_name,
-            status__in=["pending", "running"],
-        ).first()
-        if existing:
-            return Response({"job_id": existing.id, "status": existing.status})
-
-        job = ProcessingJob.objects.create(
-            video=video,
-            pipeline=pipeline_name,
-            raw_transcript=transcript,
-        )
-
-        pipeline = get_pipeline_for_language(pipeline_name)
-        from ..tasks import process_video
-        process_video.apply_async(args=[job.id], queue=pipeline.queue)
-
-        return Response(
-            {"job_id": job.id, "status": job.status},
-            status=status.HTTP_202_ACCEPTED,
-        )
-
     @action(detail=True, methods=["post"], url_path="translations")
     def store_translation(self, request, youtube_id=None):
         pipeline = request.data.get("pipeline")
         native_language = request.data.get("native_language")
         segments = request.data.get("segments")
+        language_iso3 = request.data.get("language_iso3")
+        title = request.data.get("title") or None
 
         if not pipeline or not native_language or not isinstance(segments, list):
             return Response(
@@ -105,7 +46,21 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        video = self.get_object()
+        language = None
+        if language_iso3:
+            try:
+                language = Language.objects.get(iso3=language_iso3)
+            except Language.DoesNotExist:
+                pass
+
+        video, _ = Video.objects.get_or_create(
+            youtube_id=youtube_id,
+            defaults={"language": language, "topics": None, "title": title},
+        )
+        if title and not video.title:
+            video.title = title
+            video.save(update_fields=["title"])
+
         _, created = VideoTranslation.objects.update_or_create(
             video=video,
             pipeline=pipeline,

@@ -7,9 +7,7 @@ import { PHASE } from './lib/types';
 import { loadUserSettings } from './lib/settings';
 import { randInterval } from './lib/utils';
 import {
-  stopPolling,
   loadAvailableLanguages,
-  submitForProcessing,
   submitWithLLM,
   checkAndLoadVideo,
 } from './lib/api';
@@ -40,8 +38,6 @@ const state = reactive<State>({
   currentSegmentIndex: -1,
   nextCardAt: null,
   activeVocabKeys: new Set(),
-  pollTimerId: null,
-  pollAttempts: 0,
   availableLangs: [],
   selectedLang: null,
   userSettings: null,
@@ -122,7 +118,7 @@ function removeToolbarSpacing(): void {
   document.getElementById('ti-spacing')?.remove();
 }
 
-async function ensureToolbar(ctx: ContentScriptContext, onSubmitLLM: () => void, onSubmitServer: () => void): Promise<void> {
+async function ensureToolbar(ctx: ContentScriptContext, onSubmitLLM: () => void): Promise<void> {
   applyToolbarSpacing();
 
   if (toolbarUi) {
@@ -156,7 +152,6 @@ async function ensureToolbar(ctx: ContentScriptContext, onSubmitLLM: () => void,
         state,
         TOOLBAR_HEIGHT,
         onSubmitLLM,
-        onSubmitServer,
         onRetry: () => state.videoId && loadAvailableLanguages(state, state.videoId, setPhase),
         openSettings: () => browser.runtime.sendMessage('openOptionsPage'),
       });
@@ -271,7 +266,6 @@ function applyFullscreenLayout(): void {
 async function cleanup(): Promise<void> {
   fullscreenObserver?.disconnect();
   fullscreenObserver = null;
-  stopPolling(state);
   if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
   for (const card of state.cards) clearTimeout(card.timerId);
   if (overlayUi) { overlayUi.remove(); overlayUi = null; }
@@ -305,11 +299,6 @@ async function onVideoChange(videoId: string | null, ctx: ContentScriptContext):
   await ensureToolbar(
     ctx,
     () => state.videoId && submitWithLLM(state, state.videoId, setPhase, onDone),
-    () => {
-      if (!state.videoId) return;
-      const title = document.title.replace(/ - YouTube$/, '').trim() || undefined;
-      submitForProcessing(state, state.videoId, setPhase, onDone, title);
-    },
   );
 
   checkAndLoadVideo(state, videoId, setPhase, onDone);

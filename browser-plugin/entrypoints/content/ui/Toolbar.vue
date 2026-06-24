@@ -7,7 +7,7 @@
     <span v-if="state.phase === 'checking'" class="toolbar__status">Checking…</span>
     <span v-else-if="state.phase === 'loading'" class="toolbar__status">Loading subtitle tracks…</span>
     <span v-else-if="state.phase === 'submitting'" class="toolbar__status">
-      {{ state.phaseData.message || 'Submitting…' }}
+      {{ state.phaseData.message || 'Fetching subtitles…' }}
     </span>
 
     <!-- READY -->
@@ -27,34 +27,21 @@
         </select>
 
         <template v-if="hasKey">
-          <button class="btn btn--primary btn--sm" @click="onSubmitLLM">Translate (AI)</button>
+          <button class="btn btn--primary btn--sm" @click="onSubmitLLM">Translate</button>
           <span class="toolbar__status">via {{ providerLabel }}</span>
         </template>
-
-        <button
-          class="btn btn--sm"
-          :class="hasKey ? 'btn--outline' : 'btn--primary'"
-          @click="onSubmitServer"
-        >{{ hasKey ? 'Translate (server)' : 'Translate' }}</button>
-
-        <button v-if="!hasKey" class="btn btn--link btn--sm" @click="openSettings">
-          AI: Needs Setup →
-        </button>
+        <template v-else>
+          <span class="toolbar__status">Needs API key to translate</span>
+          <button class="btn btn--link btn--sm" @click="openSettings">Set up →</button>
+        </template>
       </template>
     </template>
 
-    <!-- AI_PROCESSING / POLLING -->
+    <!-- AI_PROCESSING -->
     <template v-else-if="state.phase === 'ai-processing'">
       <Loader2 :size="13" class="toolbar__spinner" />
       <span class="toolbar__status toolbar__status--warning">
         Processing with AI… ({{ state.phaseData.done }}/{{ state.phaseData.total }} segments)
-      </span>
-    </template>
-
-    <template v-else-if="state.phase === 'polling'">
-      <Loader2 :size="13" class="toolbar__spinner" />
-      <span class="toolbar__status toolbar__status--warning">
-        Processing… ({{ state.phaseData.count }}/{{ state.phaseData.max }})
       </span>
     </template>
 
@@ -101,7 +88,6 @@ const props = defineProps<{
   state: State;
   TOOLBAR_HEIGHT: number;
   onSubmitLLM: () => void;
-  onSubmitServer: () => void;
   onRetry: () => void;
   openSettings: () => void;
 }>();

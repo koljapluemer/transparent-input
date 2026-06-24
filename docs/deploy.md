@@ -1,60 +1,66 @@
-# Deploying to Render
+# Deploying to Fly.io
 
-Two services from the same repo: **web** (Django + gunicorn) and **worker** (Celery, vps queue). Both share a managed PostgreSQL database and Redis instance, all defined in `django-backend/render.yaml`.
+Django + gunicorn web service backed by a managed PostgreSQL database. Defined in `django-backend/fly.toml` and `django-backend/Dockerfile`.
 
 ## Prerequisites
 
-- Render account (render.com)
+- Fly.io account (fly.io)
+- [flyctl](https://fly.io/docs/hands-on/install-flyctl/) installed and authenticated (`fly auth login`)
 - Repo pushed to GitHub
 
-## 1. Create the Blueprint
+## 1. Create the app
 
-1. Go to render.com → **New** → **Blueprint**
-2. Connect your GitHub repo
-3. Render detects `django-backend/render.yaml` and previews all four resources (DB, Redis, web, worker)
-4. Click **Apply** — Render provisions everything and kicks off the first deploy
-
-That's it for infrastructure. The `render.yaml` handles all service definitions, environment variable wiring, and build/start commands.
-
-## 2. Set the one manual env var
-
-`ALLOWED_HOSTS` is marked `sync: false` in the blueprint (its value depends on the domain Render assigns, which isn't known until after the first deploy).
-
-After the first deploy:
-
-1. Go to the **web** service → **Environment** tab
-2. Find `ALLOWED_HOSTS` and set it to your Render public domain, e.g. `transparent-input.onrender.com`
-3. Save — Render redeploys automatically
-
-All other env vars (`DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`) are wired automatically by the blueprint.
-
-## 3. Verify
+From `django-backend/`:
 
 ```bash
-# Health check
-curl https://your-service.onrender.com/api/
+fly launch --no-deploy
+```
 
-# Check seeded language rows
-curl https://your-service.onrender.com/api/languages/
+Accept the detected config. This registers the app name and links it to your account. It will detect the `Dockerfile` automatically.
+
+## 2. Provision Postgres
+
+```bash
+fly postgres create --name transparent-input-db --region fra
+fly postgres attach transparent-input-db
+```
+
+`attach` injects `DATABASE_URL` as a secret automatically.
+
+## 3. Set secrets
+
+```bash
+fly secrets set \
+  SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(50))") \
+  ALLOWED_HOSTS=transparent-input.fly.dev
+```
+
+Replace `transparent-input.fly.dev` with your actual app domain if you chose a different app name during `fly launch`.
+
+## 4. Deploy
+
+```bash
+fly deploy
+```
+
+Fly builds the Docker image, runs `python manage.py migrate` as a release command (before traffic switches over), then starts gunicorn. Subsequent deploys are zero-downtime.
+
+## 5. Verify
+
+```bash
+curl https://transparent-input.fly.dev/api/
+curl https://transparent-input.fly.dev/api/languages/
 # Should return Italian and Vietnamese
 ```
 
-## How migrations run
-
-`preDeployCommand: uv run python manage.py migrate` in `render.yaml` runs migrations before each new version of the web service goes live. Zero-downtime: the old version keeps serving traffic until migrations complete and the new container passes its health check.
-
-## Notes on the Argos model cache
-
-The worker runs `install_argos_models` on each start. Argos models are downloaded to the container's local filesystem (~150 MB per language, ~750 MB total). If cold-start time becomes a problem, attach a Render Disk to the worker service at `~/.local/share/argos-translate/` so models persist across deploys.
-
 ## Ongoing operations
 
-- **View worker logs**: Render dashboard → `transparent-input-worker` → Logs tab
-- **Scale the worker**: worker service → Settings → increase replicas, or bump `-c 2` to `-c 4` in `render.yaml`
-- **Run a Django shell**: Render dashboard → web service → **Shell** tab
-- **Run migrations manually**: Shell tab → `uv run python manage.py migrate`
-- **Change region**: update `region:` in `render.yaml` for all four resources (must match)
+- **View logs**: `fly logs`
+- **Django shell**: `fly ssh console -C "uv run python manage.py shell"`
+- **Run migrations manually**: `fly ssh console -C "uv run python manage.py migrate"`
+- **Scale**: `fly scale count 2` (replicas) or `fly scale vm shared-cpu-2x` (machine size)
+- **Postgres shell**: `fly postgres connect -a transparent-input-db`
 
 ## Updating the extension's backend URL
 
-In `browser-plugin/`, update the hardcoded backend URL to your Render domain before building/publishing the extension.
+In `browser-plugin/`, update the hardcoded backend URL to your Fly domain before building/publishing the extension.
