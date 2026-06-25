@@ -1,4 +1,5 @@
 import type { UserSettings } from './types';
+import { LEVEL } from './types';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENAI_MODEL = 'gpt-4.1';
@@ -7,10 +8,20 @@ const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/
 
 export { OPENAI_MODEL, GEMINI_MODEL };
 
-export function buildVocabPrompt(segmentText: string, targetLangHuman: string, nativeLangHuman: string): string {
+export function buildVocabPrompt(segmentText: string, targetLangHuman: string, nativeLangHuman: string, level: string): string {
+  let levelInstruction = '';
+  if (level === LEVEL.BEGINNER) {
+    levelInstruction =
+      'Focus only on simple, extremely common, visually clear vocabulary — concrete nouns, action verbs, and basic adjectives. Skip abstract, complex, or rare words.\n';
+  } else if (level === LEVEL.EXPERT) {
+    levelInstruction =
+      'Focus only on advanced, topic-specific, or otherwise uncommon vocabulary that a non-expert is unlikely to know. Skip simple, common words.\n';
+  }
+
   return (
     `You are helping a ${nativeLangHuman} speaker understand a ${targetLangHuman} subtitle segment.\n` +
     `Extract only the core words, short expressions, or constructions needed to understand the segment. Do not include full sentences.\n` +
+    levelInstruction +
     `Translate each item into ${nativeLangHuman}.\n` +
     `Return JSON: {"vocab": {"source expression": "translation"}}\n\n` +
     `Subtitle segment:\n${segmentText}`
@@ -40,9 +51,10 @@ export function parseVocabResponse(raw: string): Record<string, string> | null {
   }
 }
 
-async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
+async function callOpenAI(apiKey: string, prompt: string, signal?: AbortSignal): Promise<string> {
   const resp = await fetch(OPENAI_API_URL, {
     method: 'POST',
+    signal,
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({
       model: OPENAI_MODEL,
@@ -59,9 +71,10 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
   return data.choices?.[0]?.message?.content ?? '';
 }
 
-async function callGemini(apiKey: string, prompt: string): Promise<string> {
+async function callGemini(apiKey: string, prompt: string, signal?: AbortSignal): Promise<string> {
   const resp = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
     method: 'POST',
+    signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
@@ -73,9 +86,9 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
 
-export async function callLLM(settings: UserSettings, prompt: string): Promise<Record<string, string> | null> {
+export async function callLLM(settings: UserSettings, prompt: string, signal?: AbortSignal): Promise<Record<string, string> | null> {
   const raw = settings.provider === 'gemini'
-    ? await callGemini(settings.apiKey, prompt)
-    : await callOpenAI(settings.apiKey, prompt);
+    ? await callGemini(settings.apiKey, prompt, signal)
+    : await callOpenAI(settings.apiKey, prompt, signal);
   return parseVocabResponse(raw);
 }

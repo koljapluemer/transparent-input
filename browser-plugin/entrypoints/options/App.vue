@@ -3,14 +3,15 @@
     <h1 class="settings__title">Transparent Input</h1>
 
     <section class="section">
-      <h2 class="section__heading">Your native language</h2>
-      <div class="field-group">
-        <label class="label">I primarily speak</label>
-        <LanguagePicker v-model="primaryNativeLanguage" :options="allLanguageOptions" placeholder="Search for a language…" />
-
-        <label class="label" style="margin-top: 12px;">I also speak <span class="text-muted text-sm">(fallbacks — served if a video is already translated)</span></label>
-        <LanguageTagInput v-model="nativeFallbacks" :options="allLanguageOptions" placeholder="Add languages you also speak…" />
-      </div>
+      <h2 class="section__heading">Your native languages</h2>
+      <p class="section__description">The starred language is your main language. Others are used as fallbacks when a video is already translated.</p>
+      <LanguageList
+        :primary="primaryNativeLanguage"
+        :fallbacks="nativeFallbacks"
+        :options="allLanguageOptions"
+        @update:primary="primaryNativeLanguage = $event"
+        @update:fallbacks="nativeFallbacks = $event"
+      />
     </section>
 
     <hr class="divider" />
@@ -64,8 +65,7 @@
 import { ref, onMounted } from 'vue';
 import { Eye, EyeOff } from 'lucide-vue-next';
 import { iso6393 } from 'iso-639-3';
-import LanguagePicker from './LanguagePicker.vue';
-import LanguageTagInput from './LanguageTagInput.vue';
+import LanguageList from './LanguageList.vue';
 
 const display = new Intl.DisplayNames(['en'], { type: 'language' });
 
@@ -163,6 +163,12 @@ async function removeKey() {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.07em;
+  margin: 0 0 6px;
+}
+
+.section__description {
+  font-size: var(--font-sm);
+  color: var(--text-faint);
   margin: 0 0 12px;
 }
 

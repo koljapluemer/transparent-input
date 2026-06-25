@@ -3,19 +3,44 @@
     <span class="toolbar__brand">Transparent Input</span>
     <span class="toolbar__sep">|</span>
 
-    <!-- CHECKING / LOADING / SUBMITTING -->
+    <!-- CHECKING / LOADING -->
     <span v-if="state.phase === 'checking'" class="toolbar__status">Checking…</span>
     <span v-else-if="state.phase === 'loading'" class="toolbar__status">Loading subtitle tracks…</span>
-    <span v-else-if="state.phase === 'submitting'" class="toolbar__status">
-      {{ state.phaseData.message || 'Fetching subtitles…' }}
-    </span>
 
-    <!-- READY -->
-    <template v-else-if="state.phase === 'ready'">
-      <span v-if="state.availableLangs.length === 0" class="toolbar__status">
-        No supported subtitle tracks found for this video
+    <!-- SUBMITTING (fold into ai-processing display) -->
+    <template v-else-if="state.phase === 'submitting'">
+      <Loader2 :size="13" class="toolbar__spinner" />
+      <span class="toolbar__status toolbar__status--warning">{{ state.phaseData.message || 'Fetching subtitles…' }}</span>
+    </template>
+
+    <!-- AI_PROCESSING — state 3 -->
+    <template v-else-if="state.phase === 'ai-processing'">
+      <Loader2 :size="13" class="toolbar__spinner" />
+      <span class="toolbar__status toolbar__status--warning">
+        Processing… ({{ state.phaseData.done }}/{{ state.phaseData.total }} segments)
       </span>
+      <button class="btn btn--outline btn--sm" @click="onAbort">Abort</button>
+    </template>
+
+    <!-- READY — state 1a (has key) or 1b (no key) -->
+    <template v-else-if="state.phase === 'ready'">
+      <!-- 1b: no API key -->
+      <template v-if="!hasKey">
+        <span class="toolbar__status">
+          Vocabulary for this video has not been processed. To request it,
+        </span>
+        <button class="btn btn--link btn--link-primary btn--sm" @click="openSettings">set up your AI API key</button>
+        <span class="toolbar__status">, then refresh.</span>
+      </template>
+
+      <!-- 1a: has API key, no subtitle tracks -->
+      <template v-else-if="state.availableLangs.length === 0">
+        <span class="toolbar__status">No supported subtitle tracks found for this video</span>
+      </template>
+
+      <!-- 1a: has API key + subtitle tracks -->
       <template v-else>
+        <span class="toolbar__status">Extract vocabulary from</span>
         <select
           class="toolbar__select"
           :value="state.selectedLang ?? ''"
@@ -25,39 +50,102 @@
             {{ lang.displayName }}
           </option>
         </select>
-
-        <template v-if="hasKey">
-          <button class="btn btn--primary btn--sm" @click="onSubmitLLM">Translate</button>
-          <span class="toolbar__status">via {{ providerLabel }}</span>
-        </template>
-        <template v-else>
-          <span class="toolbar__status">Needs API key to translate</span>
-          <button class="btn btn--link btn--sm" @click="openSettings">Set up →</button>
-        </template>
+        <span class="toolbar__status">with translations in</span>
+        <select
+          class="toolbar__select"
+          :value="state.selectedNativeLang"
+          @change="(e) => { state.selectedNativeLang = (e.target as HTMLSelectElement).value; }"
+        >
+          <option v-for="lang in nativeLangList" :key="lang.code" :value="lang.code">
+            {{ lang.name }}
+          </option>
+        </select>
+        <span class="toolbar__status">for level</span>
+        <select
+          class="toolbar__select"
+          :value="state.selectedLevel"
+          @change="(e) => { state.selectedLevel = (e.target as HTMLSelectElement).value; }"
+        >
+          <option value="BEGINNER">Beginner</option>
+          <option value="INTERMEDIATE">Intermediate</option>
+          <option value="EXPERT">Expert</option>
+        </select>
+        <button class="btn btn--primary btn--sm" @click="onSubmitLLM">Extract vocabulary</button>
+        <span class="toolbar__status">via {{ providerLabel }}</span>
       </template>
     </template>
 
-    <!-- AI_PROCESSING -->
-    <template v-else-if="state.phase === 'ai-processing'">
-      <Loader2 :size="13" class="toolbar__spinner" />
-      <span class="toolbar__status toolbar__status--warning">
-        Processing with AI… ({{ state.phaseData.done }}/{{ state.phaseData.total }} segments)
-      </span>
-    </template>
-
-    <!-- DONE -->
+    <!-- DONE — state 2a (has key) or 2b (no key) -->
     <template v-else-if="state.phase === 'done'">
-      <CheckCircle2 :size="13" class="toolbar__icon toolbar__icon--success" />
-      <span class="toolbar__status toolbar__status--success">Ready</span>
-      <span class="toolbar__status">{{ state.phaseData.count }} segments</span>
-      <template v-if="state.phaseData.servedNativeLanguage">
-        <span class="toolbar__status">· Shown in {{ langName(state.phaseData.servedNativeLanguage) }}</span>
-        <button v-if="hasKey" class="btn btn--link btn--sm btn--link-primary" @click="onRetry">
-          Process in {{ langName(state.phaseData.primaryNativeLanguage ?? 'en') }} →
-        </button>
-        <button v-else class="btn btn--link btn--sm" @click="openSettings">
-          Set up key to process in {{ langName(state.phaseData.primaryNativeLanguage ?? 'en') }} →
-        </button>
+      <!-- Request new translation form (from "Request a new translation" link) -->
+      <template v-if="state.requestingNew">
+        <button class="btn btn--link btn--sm" @click="onToggleRequestingNew">← Back</button>
+        <span class="toolbar__sep">|</span>
+        <span class="toolbar__status">Extract vocabulary from</span>
+        <select
+          class="toolbar__select"
+          :value="state.selectedLang ?? ''"
+          @change="(e) => { state.selectedLang = (e.target as HTMLSelectElement).value; }"
+        >
+          <option v-for="lang in state.availableLangs" :key="lang.languageCode" :value="lang.languageCode">
+            {{ lang.displayName }}
+          </option>
+        </select>
+        <span class="toolbar__status">with translations in</span>
+        <select
+          class="toolbar__select"
+          :value="state.selectedNativeLang"
+          @change="(e) => { state.selectedNativeLang = (e.target as HTMLSelectElement).value; }"
+        >
+          <option v-for="lang in nativeLangList" :key="lang.code" :value="lang.code">
+            {{ lang.name }}
+          </option>
+        </select>
+        <span class="toolbar__status">for level</span>
+        <select
+          class="toolbar__select"
+          :value="state.selectedLevel"
+          @change="(e) => { state.selectedLevel = (e.target as HTMLSelectElement).value; }"
+        >
+          <option value="BEGINNER">Beginner</option>
+          <option value="INTERMEDIATE">Intermediate</option>
+          <option value="EXPERT">Expert</option>
+        </select>
+        <button class="btn btn--primary btn--sm" @click="onSubmitLLM">Extract vocabulary</button>
+      </template>
+
+      <!-- Normal done view: translation dropdown -->
+      <template v-else>
+        <CheckCircle2 :size="13" class="toolbar__icon toolbar__icon--success" />
+        <span class="toolbar__status toolbar__status--success">Showing</span>
+        <select
+          v-if="filteredTranslations.length > 0"
+          class="toolbar__select"
+          :value="currentTranslationKey"
+          @change="(e) => {
+            const [nl, lv] = (e.target as HTMLSelectElement).value.split(':');
+            onSwitchTranslation(nl, lv);
+          }"
+        >
+          <option
+            v-for="t in filteredTranslations"
+            :key="`${t.native_language}:${t.level}`"
+            :value="`${t.native_language}:${t.level}`"
+          >
+            {{ langName(t.native_language) }} ({{ levelLabel(t.level) }})
+          </option>
+        </select>
+        <span class="toolbar__status">· {{ state.phaseData.count }} segments</span>
+
+        <!-- 2a: has API key -->
+        <template v-if="hasKey">
+          <button class="btn btn--link btn--sm" @click="onToggleRequestingNew">Request a new translation</button>
+        </template>
+        <!-- 2b: no API key -->
+        <template v-else>
+          <span class="toolbar__status">·</span>
+          <button class="btn btn--link btn--sm" @click="openSettings">To request another translation, set up your API key</button>
+        </template>
       </template>
     </template>
 
@@ -88,6 +176,9 @@ const props = defineProps<{
   state: State;
   TOOLBAR_HEIGHT: number;
   onSubmitLLM: () => void;
+  onAbort: () => void;
+  onSwitchTranslation: (nativeLang: string, level: string) => void;
+  onToggleRequestingNew: () => void;
   onRetry: () => void;
   openSettings: () => void;
 }>();
@@ -97,9 +188,35 @@ const { state } = props;
 const hasKey = computed(() => !!state.userSettings?.apiKey);
 const providerLabel = computed(() => state.userSettings?.provider === 'gemini' ? 'Gemini' : 'OpenAI');
 
+const nativeLangList = computed(() => {
+  const s = state.userSettings;
+  if (!s) return [];
+  return [s.primaryNativeLanguage, ...s.nativeFallbacks].map(code => ({
+    code,
+    name: nativeLangDisplayName(code),
+  }));
+});
+
+const filteredTranslations = computed(() => {
+  const s = state.userSettings;
+  if (!s) return state.availableTranslations;
+  const nativeLangs = new Set([s.primaryNativeLanguage, ...s.nativeFallbacks]);
+  return state.availableTranslations.filter(t => nativeLangs.has(t.native_language));
+});
+
+const currentTranslationKey = computed(() =>
+  `${state.currentNativeLanguage}:${state.currentTranslationLevel}`,
+);
+
 function langName(code: string | null | undefined): string {
   if (!code) return '';
   return nativeLangDisplayName(code);
+}
+
+function levelLabel(level: string): string {
+  if (level === 'BEGINNER') return 'Beginner';
+  if (level === 'EXPERT') return 'Expert';
+  return 'Intermediate';
 }
 </script>
 

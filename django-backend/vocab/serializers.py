@@ -11,13 +11,13 @@ class VideoListSerializer(serializers.ModelSerializer):
 class VideoTranslationSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoTranslation
-        fields = ["pipeline", "native_language", "created_at"]
+        fields = ["pipeline", "native_language", "level", "created_at"]
 
 
 class VideoTranslationDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = VideoTranslation
-        fields = ["pipeline", "native_language", "segments"]
+        fields = ["pipeline", "native_language", "level", "segments"]
 
 
 class VideoDetailSerializer(serializers.ModelSerializer):

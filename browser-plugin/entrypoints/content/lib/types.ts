@@ -11,6 +11,14 @@ export const PHASE = {
 
 export type Phase = typeof PHASE[keyof typeof PHASE];
 
+export const LEVEL = {
+  BEGINNER:     'BEGINNER',
+  INTERMEDIATE: 'INTERMEDIATE',
+  EXPERT:       'EXPERT',
+} as const;
+
+export type Level = typeof LEVEL[keyof typeof LEVEL];
+
 export interface LangEntry {
   languageCode: string;
   displayName: string;
@@ -57,6 +65,7 @@ export interface PhaseData {
 export interface AvailableTranslation {
   pipeline: string;
   native_language: string;
+  level: string;
   created_at: string;
 }
 
@@ -83,4 +92,11 @@ export interface State {
   selectedLang: string | null;
   userSettings: UserSettings | null;
   llmSegments: boolean;
+  availableTranslations: AvailableTranslation[];
+  currentNativeLanguage: string;
+  currentTranslationLevel: string;
+  requestingNew: boolean;
+  selectedLevel: string;
+  selectedNativeLang: string;
+  abortController: AbortController | null;
 }

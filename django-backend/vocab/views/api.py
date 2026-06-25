@@ -30,6 +30,7 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
     def store_translation(self, request, youtube_id=None):
         pipeline = request.data.get("pipeline")
         native_language = request.data.get("native_language")
+        level = request.data.get("level", VideoTranslation.Level.INTERMEDIATE)
         segments = request.data.get("segments")
         language = request.data.get("language") or None
         title = request.data.get("title") or None
@@ -37,6 +38,12 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
         if not pipeline or not native_language or not isinstance(segments, list):
             return Response(
                 {"error": "pipeline, native_language, and segments (list) are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if level not in VideoTranslation.Level.values:
+            return Response(
+                {"error": f"level must be one of: {', '.join(VideoTranslation.Level.values)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -52,6 +59,7 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
             video=video,
             pipeline=pipeline,
             native_language=native_language,
+            level=level,
             defaults={"segments": segments},
         )
 
@@ -67,20 +75,22 @@ class VideoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
     )
     def translation_detail(self, request, youtube_id=None, native_language=None):
         video = self.get_object()
-        try:
-            translation = VideoTranslation.objects.get(
+        level = request.query_params.get("level", VideoTranslation.Level.INTERMEDIATE)
+
+        translation = (
+            VideoTranslation.objects.filter(
                 video=video,
                 native_language=native_language,
+                level=level,
             )
-        except VideoTranslation.DoesNotExist:
+            .order_by("-created_at")
+            .first()
+        )
+
+        if translation is None:
             return Response(
-                {"error": f"No translation found for language: {native_language}"},
+                {"error": f"No translation found for language: {native_language}, level: {level}"},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        except VideoTranslation.MultipleObjectsReturned:
-            translation = VideoTranslation.objects.filter(
-                video=video,
-                native_language=native_language,
-            ).order_by("-created_at").first()
 
         return Response(VideoTranslationDetailSerializer(translation).data)

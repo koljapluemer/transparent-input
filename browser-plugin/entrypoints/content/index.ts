@@ -3,12 +3,13 @@ import { reactive, createApp } from 'vue';
 import { createShadowRootUi } from 'wxt/utils/content-script-ui/shadow-root';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import type { State, PhaseData } from './lib/types';
-import { PHASE } from './lib/types';
+import { PHASE, LEVEL } from './lib/types';
 import { loadUserSettings } from './lib/settings';
 import { randInterval } from './lib/utils';
 import {
   loadAvailableLanguages,
   submitWithLLM,
+  switchTranslation,
   checkAndLoadVideo,
 } from './lib/api';
 import Toolbar from './ui/Toolbar.vue';
@@ -42,6 +43,13 @@ const state = reactive<State>({
   selectedLang: null,
   userSettings: null,
   llmSegments: false,
+  availableTranslations: [],
+  currentNativeLanguage: '',
+  currentTranslationLevel: LEVEL.INTERMEDIATE,
+  requestingNew: false,
+  selectedLevel: LEVEL.INTERMEDIATE,
+  selectedNativeLang: '',
+  abortController: null,
 });
 
 // ── Phase management ──────────────────────────────────────────────────────────
@@ -101,6 +109,20 @@ function tick(): void {
   state.nextCardAt = now + randInterval(MIN_CARD_INTERVAL_S, MAX_CARD_INTERVAL_S);
 }
 
+// ── Abort ─────────────────────────────────────────────────────────────────────
+
+function handleAbort(): void {
+  state.abortController?.abort();
+  state.abortController = null;
+  state.requestingNew = false;
+  if (!state.videoId) return;
+  if (state.availableTranslations.length > 0) {
+    setPhase(state.videoId, PHASE.DONE, { count: state.segments.length });
+  } else {
+    setPhase(state.videoId, PHASE.READY);
+  }
+}
+
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 
 let toolbarUi: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
@@ -118,11 +140,10 @@ function removeToolbarSpacing(): void {
   document.getElementById('ti-spacing')?.remove();
 }
 
-async function ensureToolbar(ctx: ContentScriptContext, onSubmitLLM: () => void): Promise<void> {
+async function ensureToolbar(ctx: ContentScriptContext): Promise<void> {
   applyToolbarSpacing();
 
   if (toolbarUi) {
-    // Show if previously hidden (no-video state)
     toolbarUi.shadowHost.style.setProperty('display', 'block', 'important');
     return;
   }
@@ -132,9 +153,6 @@ async function ensureToolbar(ctx: ContentScriptContext, onSubmitLLM: () => void)
     position: 'inline',
     anchor: 'body',
     append: 'first',
-    // WXT resets :host with all:initial !important — override it here (same layer, later = wins).
-    // Position is controlled via --ti-top custom property so JS can update it without fighting
-    // !important across the shadow boundary (custom properties pierce shadow DOM cleanly).
     css: `
       :host {
         display: block !important;
@@ -151,7 +169,18 @@ async function ensureToolbar(ctx: ContentScriptContext, onSubmitLLM: () => void)
       const app = createApp(Toolbar, {
         state,
         TOOLBAR_HEIGHT,
-        onSubmitLLM,
+        onSubmitLLM: () => {
+          if (!state.videoId) return;
+          const nativeLang = state.selectedNativeLang || state.userSettings?.primaryNativeLanguage || 'en';
+          const level = state.selectedLevel || LEVEL.INTERMEDIATE;
+          submitWithLLM(state, state.videoId, nativeLang, level, setPhase, () => injectOverlayAndStart(ctx));
+        },
+        onAbort: handleAbort,
+        onSwitchTranslation: (nativeLang: string, level: string) => {
+          if (!state.videoId) return;
+          switchTranslation(state, state.videoId, nativeLang, level, setPhase);
+        },
+        onToggleRequestingNew: () => { state.requestingNew = !state.requestingNew; },
         onRetry: () => state.videoId && loadAvailableLanguages(state, state.videoId, setPhase),
         openSettings: () => browser.runtime.sendMessage('openOptionsPage'),
       });
@@ -171,14 +200,12 @@ async function ensureToolbar(ctx: ContentScriptContext, onSubmitLLM: () => void)
 let overlayUi: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
 
 async function injectOverlayAndStart(ctx: ContentScriptContext): Promise<void> {
-  // Remove previous overlay if it exists
   if (overlayUi) {
     overlayUi.remove();
     overlayUi = null;
     state.overlay = null;
   }
 
-  // Wait for #movie_player (up to 5s)
   const player = await waitForElement('#movie_player', 5000);
   if (!player || !state.videoId) return;
 
@@ -214,7 +241,6 @@ async function injectOverlayAndStart(ctx: ContentScriptContext): Promise<void> {
   overlayUi.mount();
   state.overlay = overlayUi.shadowHost;
 
-  // Watch for YouTube's own fullscreen class on #movie_player
   fullscreenObserver?.disconnect();
   fullscreenObserver = new MutationObserver(applyFullscreenLayout);
   fullscreenObserver.observe(player, { attributes: true, attributeFilter: ['class'] });
@@ -237,16 +263,10 @@ function waitForElement(selector: string, timeoutMs: number): Promise<Element | 
 }
 
 // ── Fullscreen handling ───────────────────────────────────────────────────────
-//
-// CSS custom properties set on the shadow host propagate into the shadow root
-// via var(), avoiding the !important cascade conflict between inner shadow
-// styles and outer document styles.
 
 let fullscreenObserver: MutationObserver | null = null;
 
 function isFullscreen(): boolean {
-  // YouTube sets .ytp-fullscreen on #movie_player — more reliable than
-  // document.fullscreenElement which can be null in some browser/version combos.
   return !!document.fullscreenElement ||
     !!document.querySelector('#movie_player.ytp-fullscreen');
 }
@@ -266,6 +286,8 @@ function applyFullscreenLayout(): void {
 async function cleanup(): Promise<void> {
   fullscreenObserver?.disconnect();
   fullscreenObserver = null;
+  state.abortController?.abort();
+  state.abortController = null;
   if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
   for (const card of state.cards) clearTimeout(card.timerId);
   if (overlayUi) { overlayUi.remove(); overlayUi = null; }
@@ -281,6 +303,12 @@ async function cleanup(): Promise<void> {
   state.availableLangs = [];
   state.selectedLang = null;
   state.llmSegments = false;
+  state.availableTranslations = [];
+  state.currentNativeLanguage = '';
+  state.currentTranslationLevel = LEVEL.INTERMEDIATE;
+  state.requestingNew = false;
+  state.selectedLevel = LEVEL.INTERMEDIATE;
+  state.selectedNativeLang = '';
 }
 
 async function onVideoChange(videoId: string | null, ctx: ContentScriptContext): Promise<void> {
@@ -294,12 +322,11 @@ async function onVideoChange(videoId: string | null, ctx: ContentScriptContext):
 
   state.videoId = videoId;
   state.userSettings = await loadUserSettings();
+  state.selectedNativeLang = state.userSettings?.primaryNativeLanguage || 'en';
+  state.selectedLevel = LEVEL.INTERMEDIATE;
 
   const onDone = () => injectOverlayAndStart(ctx);
-  await ensureToolbar(
-    ctx,
-    () => state.videoId && submitWithLLM(state, state.videoId, setPhase, onDone),
-  );
+  await ensureToolbar(ctx);
 
   checkAndLoadVideo(state, videoId, setPhase, onDone);
 }
