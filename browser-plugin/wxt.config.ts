@@ -22,7 +22,7 @@ export default defineConfig({
     ...(browser === 'firefox' && {
       browser_specific_settings: {
         gecko: {
-          id: 'transparent-input@transparent-input.app',
+          id: 'transparent-input-for-youtube@koljasam.com',
           strict_min_version: '140.0',
           data_collection_permissions: {
             // Subtitle text is sent to OpenAI/Gemini using the user's own API key
