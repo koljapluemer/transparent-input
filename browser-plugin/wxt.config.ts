@@ -9,7 +9,7 @@ export default defineConfig({
     },
   },
   manifest: ({ mode, browser }) => ({
-    name: 'Transparent Input Vocab Overlay',
+    name: 'Transparent Input Experimental',
     description: 'Overlays vocab cards on YouTube videos using Transparent Input data',
     version: '1.0.0',
     permissions: ['storage'],
@@ -22,7 +22,7 @@ export default defineConfig({
     ...(browser === 'firefox' && {
       browser_specific_settings: {
         gecko: {
-          id: 'transparent-input-for-youtube@koljasam.com',
+          id: 'transparent-input-personal@koljasam.com',
           strict_min_version: '140.0',
           data_collection_permissions: {
             // Subtitle text is sent to OpenAI/Gemini using the user's own API key
