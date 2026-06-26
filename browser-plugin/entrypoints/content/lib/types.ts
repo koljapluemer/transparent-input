@@ -36,6 +36,7 @@ export interface Card {
   word: string;
   translation: string;
   timerId: ReturnType<typeof setTimeout>;
+  expireAt: number;
 }
 
 export interface UserSettings {

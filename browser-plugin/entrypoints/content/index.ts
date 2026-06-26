@@ -64,8 +64,9 @@ function setPhase(videoId: string, phase: typeof PHASE[keyof typeof PHASE], data
 
 function addCard(word: string, translation: string): void {
   const id = ++state.cardCounter;
+  const expireAt = performance.now() + CARD_DISPLAY_MS;
   const timerId = setTimeout(() => dismissCard(id), CARD_DISPLAY_MS);
-  state.cards.push({ id, word, translation, timerId });
+  state.cards.push({ id, word, translation, timerId, expireAt });
   state.activeVocabKeys.add(word);
 }
 
@@ -78,11 +79,31 @@ function dismissCard(id: number): void {
   state.cards.splice(idx, 1);
 }
 
+// ── Video pause/play ──────────────────────────────────────────────────────────
+
+function pauseCards(): void {
+  const now = performance.now();
+  for (const card of state.cards) {
+    clearTimeout(card.timerId);
+    card.expireAt = Math.max(0, card.expireAt - now); // store remaining ms
+  }
+}
+
+function resumeCards(): void {
+  const now = performance.now();
+  for (const card of state.cards) {
+    const remaining = card.expireAt; // remaining ms set during pauseCards
+    card.expireAt = now + remaining;
+    card.timerId = setTimeout(() => dismissCard(card.id), remaining);
+  }
+}
+
 // ── Tick loop ─────────────────────────────────────────────────────────────────
 
 function tick(): void {
   const video = document.querySelector('video');
   if (!video || !state.overlay) return;
+  if (video.paused) return;
 
   const current = video.currentTime;
   const now = performance.now();
@@ -198,6 +219,7 @@ async function ensureToolbar(ctx: ContentScriptContext): Promise<void> {
 // ── Overlay ───────────────────────────────────────────────────────────────────
 
 let overlayUi: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
+let videoForListeners: HTMLVideoElement | null = null;
 
 async function injectOverlayAndStart(ctx: ContentScriptContext): Promise<void> {
   if (overlayUi) {
@@ -246,6 +268,14 @@ async function injectOverlayAndStart(ctx: ContentScriptContext): Promise<void> {
   fullscreenObserver.observe(player, { attributes: true, attributeFilter: ['class'] });
 
   applyFullscreenLayout();
+
+  const video = document.querySelector('video');
+  if (video) {
+    videoForListeners = video as HTMLVideoElement;
+    video.addEventListener('pause', pauseCards);
+    video.addEventListener('play', resumeCards);
+  }
+
   state.intervalId = setInterval(tick, POLL_INTERVAL_MS);
 }
 
@@ -289,6 +319,11 @@ async function cleanup(): Promise<void> {
   state.abortController?.abort();
   state.abortController = null;
   if (state.intervalId) { clearInterval(state.intervalId); state.intervalId = null; }
+  if (videoForListeners) {
+    videoForListeners.removeEventListener('pause', pauseCards);
+    videoForListeners.removeEventListener('play', resumeCards);
+    videoForListeners = null;
+  }
   for (const card of state.cards) clearTimeout(card.timerId);
   if (overlayUi) { overlayUi.remove(); overlayUi = null; }
   state.overlay = null;
