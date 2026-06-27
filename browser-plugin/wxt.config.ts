@@ -11,7 +11,7 @@ export default defineConfig({
   manifest: ({ mode, browser }) => ({
     name: 'Transparent Input Experimental',
     description: 'Overlays vocab cards on YouTube videos using Transparent Input data',
-    version: '1.0.1',
+    version: '1.0.2',
     permissions: ['storage'],
     host_permissions: [
       // localhost only in dev — store builds reject it
