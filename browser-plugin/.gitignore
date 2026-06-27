@@ -3,3 +3,4 @@ node_modules/
 .wxt/
 .firefox-profile/
 .en*
+web-ext-artifacts/*
