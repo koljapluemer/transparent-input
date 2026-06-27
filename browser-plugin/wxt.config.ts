@@ -15,7 +15,7 @@ export default defineConfig({
     permissions: ['storage'],
     host_permissions: [
       // localhost only in dev — store builds reject it
-      ...(mode === 'development' ? ['http://localhost:8000/*'] : ['https://161.35.205.56/*']),
+      ...(mode === 'development' ? ['http://localhost:8000/*'] : ['https://ti.koljasam.com/*']),
       'https://api.openai.com/*',
       'https://generativelanguage.googleapis.com/*',
     ],

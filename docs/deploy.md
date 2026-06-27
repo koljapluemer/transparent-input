@@ -215,4 +215,4 @@ All commands below assume you are **SSH'd in as deploy**.
 
 ## Updating the extension's backend URL
 
-In `browser-plugin/`, update the hardcoded backend URL to your domain before building/publishing the extension.
+The production API URL is `https://ti.koljasam.com/api` — set in `browser-plugin/.env.production` and mirrored as a host permission in `browser-plugin/wxt.config.ts`. If the domain changes, update both.
