@@ -1,0 +1,115 @@
+{% extends "vocab/base.html" %}
+
+{% block title %}Add a video — {{ language.human_readable }} — Transparent Input{% endblock %}
+
+{% block content %}
+<div class="flex items-center gap-2 mb-1">
+  <a href="{% url 'video-list' language=language.code %}" class="text-base-content/50 hover:text-base-content text-sm">{{ language.human_readable }}</a>
+  <span class="text-base-content/30">/</span>
+  <span class="text-sm">Add a video</span>
+</div>
+
+<h1 class="text-2xl font-semibold mb-6">Add a video</h1>
+
+{% if error %}
+<div role="alert" class="alert alert-error mb-6">
+  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+  <span>{{ error }}</span>
+</div>
+{% endif %}
+
+<form method="post" class="max-w-lg space-y-5" id="request-form">
+  {% csrf_token %}
+
+  <div class="form-control">
+    <label class="label" for="youtube_url">
+      <span class="label-text font-medium">YouTube URL</span>
+    </label>
+    <input
+      type="url"
+      id="youtube_url"
+      name="youtube_url"
+      required
+      placeholder="https://www.youtube.com/watch?v=..."
+      value="{{ form.youtube_url|default:'' }}"
+      class="input input-bordered w-full"
+    >
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="native_language">
+      <span class="label-text font-medium">Your language</span>
+      <span class="label-text-alt text-base-content/50">BCP-47 code, e.g. "en"</span>
+    </label>
+    <input
+      type="text"
+      id="native_language"
+      name="native_language"
+      value="{{ form.native_language|default:'en' }}"
+      placeholder="en"
+      class="input input-bordered w-32"
+    >
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="level">
+      <span class="label-text font-medium">Level</span>
+    </label>
+    <select id="level" name="level" class="select select-bordered w-48">
+      <option value="BEGINNER" {% if form.level == "BEGINNER" %}selected{% endif %}>Beginner</option>
+      <option value="INTERMEDIATE" {% if form.level != "BEGINNER" and form.level != "EXPERT" %}selected{% endif %}>Intermediate</option>
+      <option value="EXPERT" {% if form.level == "EXPERT" %}selected{% endif %}>Expert</option>
+    </select>
+  </div>
+
+  <div class="form-control">
+    <span class="label-text font-medium mb-2 block">AI provider</span>
+    <div class="flex gap-6">
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="radio" name="provider" value="openai" class="radio radio-sm"
+          {% if form.provider != "gemini" %}checked{% endif %}>
+        <span>OpenAI</span>
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="radio" name="provider" value="gemini" class="radio radio-sm"
+          {% if form.provider == "gemini" %}checked{% endif %}>
+        <span>Gemini</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="form-control">
+    <label class="label" for="api_key">
+      <span class="label-text font-medium">API key</span>
+    </label>
+    <input
+      type="password"
+      id="api_key"
+      name="api_key"
+      required
+      placeholder="sk-..."
+      class="input input-bordered w-full font-mono"
+    >
+    <p class="text-xs text-base-content/50 mt-1">Your key is sent to the provider and never stored.</p>
+  </div>
+
+  <div class="pt-2">
+    <button type="submit" class="btn btn-primary" id="submit-btn">
+      Process video
+    </button>
+    <span id="processing-msg" class="hidden ml-3 text-sm text-base-content/60">
+      <span class="loading loading-spinner loading-xs"></span>
+      Processing — this may take a minute…
+    </span>
+  </div>
+</form>
+
+<script>
+  document.getElementById('request-form').addEventListener('submit', function () {
+    const btn = document.getElementById('submit-btn');
+    const msg = document.getElementById('processing-msg');
+    btn.disabled = true;
+    msg.classList.remove('hidden');
+  });
+</script>
+{% endblock %}
