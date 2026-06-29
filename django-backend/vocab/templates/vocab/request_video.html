@@ -90,7 +90,11 @@
       placeholder="sk-..."
       class="input input-bordered w-full font-mono"
     >
-    <p class="text-xs text-base-content/50 mt-1">Your key is forwarded to the AI provider to process the video. This incurs API costs charged to your account. The key is sent to our server to make the request but is never stored.</p>
+    <label class="flex items-center gap-2 mt-2 cursor-pointer w-fit">
+      <input type="checkbox" id="save_api_key" class="checkbox checkbox-sm">
+      <span class="text-sm">Remember this key in my browser</span>
+    </label>
+    <p class="text-xs text-base-content/50 mt-1">Your key is forwarded to the AI provider to process the video. This incurs API costs charged to your account. The key is sent to our server to make the request but is never stored there.</p>
   </div>
 
   <div class="pt-2">
@@ -106,6 +110,7 @@
 
 <script>
   const apiKeyInput = document.getElementById('api_key');
+  const saveCheckbox = document.getElementById('save_api_key');
   const providerRadios = document.querySelectorAll('input[name="provider"]');
 
   function storageKey(provider) {
@@ -116,24 +121,33 @@
     return document.querySelector('input[name="provider"]:checked')?.value ?? 'openai';
   }
 
-  function loadApiKey() {
-    apiKeyInput.value = localStorage.getItem(storageKey(currentProvider())) ?? '';
-  }
-
-  function saveApiKey() {
-    const val = apiKeyInput.value;
-    if (val) {
-      localStorage.setItem(storageKey(currentProvider()), val);
+  function loadForProvider() {
+    const stored = localStorage.getItem(storageKey(currentProvider()));
+    if (stored) {
+      apiKeyInput.value = stored;
+      saveCheckbox.checked = true;
+    } else {
+      apiKeyInput.value = '';
+      saveCheckbox.checked = false;
     }
   }
 
-  providerRadios.forEach(radio => radio.addEventListener('change', loadApiKey));
-  apiKeyInput.addEventListener('input', saveApiKey);
+  saveCheckbox.addEventListener('change', function () {
+    if (!this.checked) {
+      localStorage.removeItem(storageKey(currentProvider()));
+    }
+  });
 
-  loadApiKey();
+  providerRadios.forEach(radio => radio.addEventListener('change', loadForProvider));
+
+  loadForProvider();
 
   document.getElementById('request-form').addEventListener('submit', function () {
-    saveApiKey();
+    if (saveCheckbox.checked && apiKeyInput.value) {
+      localStorage.setItem(storageKey(currentProvider()), apiKeyInput.value);
+    } else if (!saveCheckbox.checked) {
+      localStorage.removeItem(storageKey(currentProvider()));
+    }
     const btn = document.getElementById('submit-btn');
     const msg = document.getElementById('processing-msg');
     btn.disabled = true;
