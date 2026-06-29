@@ -8,7 +8,7 @@
 {% if videos %}
 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
   {% for video in videos %}
-  <div class="card bg-base-100 border border-base-200 overflow-hidden">
+  <a href="https://www.youtube.com/watch?v={{ video.youtube_id }}" target="_blank" rel="noopener noreferrer" class="card bg-base-100 border border-base-200 overflow-hidden hover:border-base-300 transition-colors">
     <figure>
       <img
         src="https://img.youtube.com/vi/{{ video.youtube_id }}/mqdefault.jpg"
@@ -21,7 +21,7 @@
         {{ video.title|default:video.youtube_id }}
       </p>
     </div>
-  </div>
+  </a>
   {% endfor %}
 </div>
 {% else %}
