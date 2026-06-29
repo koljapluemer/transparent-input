@@ -1,12 +1,12 @@
 {% extends "vocab/base.html" %}
 
 {% block content %}
-<h1 class="text-2xl font-semibold mb-6">Videos</h1>
+<h1 class="text-2xl font-semibold mb-6">Which language do you want to acquire?</h1>
 
 <ul class="space-y-2">
   {% for lang in languages %}
   <li>
-    <a href="{% url 'video-list' language=lang.code %}" class="link link-hover">
+    <a href="{% url 'video-list' language=lang.code %}" class="link link-hover underline">
       {{ lang.human_readable }}
     </a>
   </li>

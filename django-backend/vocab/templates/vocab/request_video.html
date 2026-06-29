@@ -61,7 +61,9 @@
   </div>
 
   <div class="form-control">
-    <span class="label-text font-medium mb-2 block">AI provider</span>
+    <div class="label">
+      <span class="label-text font-medium">AI provider</span>
+    </div>
     <div class="flex gap-6">
       <label class="flex items-center gap-2 cursor-pointer">
         <input type="radio" name="provider" value="openai" class="radio radio-sm"
@@ -88,7 +90,7 @@
       placeholder="sk-..."
       class="input input-bordered w-full font-mono"
     >
-    <p class="text-xs text-base-content/50 mt-1">Your key is sent to the provider and never stored.</p>
+    <p class="text-xs text-base-content/50 mt-1">Your key is forwarded to the AI provider to process the video. This incurs API costs charged to your account. The key is sent to our server to make the request but is never stored.</p>
   </div>
 
   <div class="pt-2">
@@ -103,7 +105,35 @@
 </form>
 
 <script>
+  const apiKeyInput = document.getElementById('api_key');
+  const providerRadios = document.querySelectorAll('input[name="provider"]');
+
+  function storageKey(provider) {
+    return `transparent-input-api-key-${provider}`;
+  }
+
+  function currentProvider() {
+    return document.querySelector('input[name="provider"]:checked')?.value ?? 'openai';
+  }
+
+  function loadApiKey() {
+    apiKeyInput.value = localStorage.getItem(storageKey(currentProvider())) ?? '';
+  }
+
+  function saveApiKey() {
+    const val = apiKeyInput.value;
+    if (val) {
+      localStorage.setItem(storageKey(currentProvider()), val);
+    }
+  }
+
+  providerRadios.forEach(radio => radio.addEventListener('change', loadApiKey));
+  apiKeyInput.addEventListener('input', saveApiKey);
+
+  loadApiKey();
+
   document.getElementById('request-form').addEventListener('submit', function () {
+    saveApiKey();
     const btn = document.getElementById('submit-btn');
     const msg = document.getElementById('processing-msg');
     btn.disabled = true;

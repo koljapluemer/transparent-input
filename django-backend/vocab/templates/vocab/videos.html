@@ -3,6 +3,9 @@
 {% block title %}{{ language.human_readable }} — Transparent Input{% endblock %}
 
 {% block content %}
+<div class="mb-4">
+  <a href="{% url 'language-select' %}" class="text-sm text-base-content/50 hover:text-base-content transition-colors">← Languages</a>
+</div>
 <div class="flex items-center justify-between mb-6">
   <h1 class="text-2xl font-semibold">{{ language.human_readable }}</h1>
   <a href="{% url 'request-video' language=language.code %}" class="btn btn-sm btn-outline">Add a video</a>

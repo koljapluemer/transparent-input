@@ -1,0 +1,4 @@
+- you are using about 654 paradigms to displaying form inputs (e.g. django-backend/vocab/templates/vocab/request_video.html): Grey text, black text, label above, label infront...Please LOOK UP daisy UI patterns, and then CONSISTENTLY use ONE!!!!!!!!!!!!!!!!!! sane pattern.
+- allow saving API key needed in aformentioned page in browser localstorage so user doesn't have to input every time
+- add note about how API is used, that cost can be incurred, and that it's sent to server but not stored.
+- allow going back to language select from video
