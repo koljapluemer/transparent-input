@@ -2,6 +2,7 @@ import re
 import urllib.error
 
 import langcodes
+from django.conf.global_settings import LANGUAGES
 from django.shortcuts import redirect, render
 from django.views import View
 
@@ -38,6 +39,7 @@ class RequestVideoView(View):
                 "code": language_code,
                 "human_readable": langcodes.get(language_code).display_name("en"),
             },
+            "languages": LANGUAGES,
             **extra,
         }
 

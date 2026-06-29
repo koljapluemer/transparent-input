@@ -39,16 +39,14 @@
   <div class="form-control">
     <label class="label" for="native_language">
       <span class="label-text font-medium">Your language</span>
-      <span class="label-text-alt text-base-content/50">BCP-47 code, e.g. "en"</span>
     </label>
-    <input
-      type="text"
-      id="native_language"
-      name="native_language"
-      value="{{ form.native_language|default:'en' }}"
-      placeholder="en"
-      class="input input-bordered w-32"
-    >
+    <select id="native_language" name="native_language" class="select select-bordered w-64">
+      {% with nl=form.native_language|default:'en' %}
+      {% for code, name in languages %}
+      <option value="{{ code }}" {% if code == nl %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+      {% endwith %}
+    </select>
   </div>
 
   <div class="form-control">
