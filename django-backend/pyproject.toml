@@ -14,5 +14,5 @@ dependencies = [
     "whitenoise>=6.9",
     "yt-dlp>=2024.1.1",
     "python-dotenv>=1.2.2",
-    "langcodes>=3.4",
+    "langcodes[data]>=3.4",
 ]
