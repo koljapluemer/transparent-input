@@ -1,0 +1,279 @@
+{% extends "vocab/base.html" %}
+
+{% block title %}{{ video.title|default:video.youtube_id }} — Transparent Input{% endblock %}
+
+{% block extra_head %}
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="{% url 'video-list' language=language_code %}" class="text-sm text-base-content/50 hover:text-base-content transition-colors">← {{ language_human }}</a>
+</div>
+
+<h1 class="text-xl font-semibold mb-4">{{ video.title|default:video.youtube_id }}</h1>
+
+<div
+  x-data="videoPlayer(
+    {{ initial_segments_json }},
+    {{ available_translations_json }},
+    '{{ video.youtube_id }}',
+    '{{ initial_native_lang }}',
+    '{{ initial_level }}'
+  )"
+  x-init="init()"
+>
+  {% if available_translations_json != '[]' %}
+  <div class="flex items-center gap-3 mb-3 text-sm">
+    <label class="text-base-content/60">Translate to:</label>
+    <select
+      x-model="selectedNativeLang"
+      @change="onLangChange()"
+      class="select select-sm select-bordered"
+    >
+      <template x-for="lang in uniqueLangs" :key="lang">
+        <option :value="lang" x-text="lang"></option>
+      </template>
+    </select>
+    <select
+      x-model="selectedLevel"
+      @change="switchTranslation()"
+      class="select select-sm select-bordered"
+    >
+      <template x-for="lvl in levelsForLang" :key="lvl">
+        <option :value="lvl" x-text="lvl"></option>
+      </template>
+    </select>
+  </div>
+  {% endif %}
+
+  <div class="relative w-full overflow-hidden rounded-box" style="aspect-ratio:16/9">
+    <iframe
+      id="yt-player"
+      src="https://www.youtube.com/embed/{{ video.youtube_id }}?enablejsapi=1&origin={{ origin }}"
+      allow="autoplay; encrypted-media"
+      allowfullscreen
+      referrerpolicy="strict-origin-when-cross-origin"
+      class="w-full h-full border-0"
+    ></iframe>
+
+    <div
+      class="absolute top-3 left-3 pointer-events-none z-10 flex flex-col gap-1.5"
+      aria-live="polite"
+    >
+      <template x-for="card in cards" :key="card.id">
+        <div
+          x-show="true"
+          x-transition:enter="transition ease-out duration-200"
+          x-transition:enter-start="opacity-0 -translate-y-1"
+          x-transition:enter-end="opacity-100 translate-y-0"
+          x-transition:leave="transition ease-in duration-150"
+          x-transition:leave-start="opacity-100 translate-y-0"
+          x-transition:leave-end="opacity-0 -translate-y-1"
+          @click.stop="dismiss(card.id)"
+          class="vocab-card"
+        >
+          <span x-text="card.word"></span> = <span x-text="card.translation"></span>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+<style>
+.vocab-card {
+  display: inline-block;
+  padding: 5px 13px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.87);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  user-select: none;
+  pointer-events: auto;
+}
+</style>
+
+<script>
+function videoPlayer(initialSegments, availableTranslations, youtubeId, initialNativeLang, initialLevel) {
+  return {
+    segments: [],
+    cards: [],
+    cardCounter: 0,
+    activeVocabKeys: new Set(),
+    currentSegmentIndex: -1,
+    nextCardAt: null,
+    intervalId: null,
+    player: null,
+    isPaused: true,
+    pausedCardRemainders: [],
+    availableTranslations,
+    selectedNativeLang: initialNativeLang,
+    selectedLevel: initialLevel,
+    youtubeId,
+
+    get uniqueLangs() {
+      return [...new Set(this.availableTranslations.map(t => t.native_language))];
+    },
+
+    get levelsForLang() {
+      return this.availableTranslations
+        .filter(t => t.native_language === this.selectedNativeLang)
+        .map(t => t.level);
+    },
+
+    init() {
+      this.loadSegments(initialSegments);
+
+      window.onYouTubeIframeAPIReady = () => {
+        this.player = new YT.Player('yt-player', {
+          events: {
+            onReady: () => this.startPolling(),
+            onStateChange: e => this.onStateChange(e),
+          },
+        });
+      };
+
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(tag);
+    },
+
+    loadSegments(raw) {
+      this.segments = raw
+        .map(seg => ({
+          startSeconds: this.parseTimestamp(seg.startTimestamp),
+          endSeconds: this.parseTimestamp(seg.endTimestamp),
+          vocab: Object.entries(seg.vocab ?? {}),
+        }))
+        .filter(seg => seg.endSeconds > seg.startSeconds && seg.vocab.length > 0);
+    },
+
+    startPolling() {
+      this.intervalId = setInterval(() => this.tick(), 300);
+    },
+
+    tick() {
+      if (!this.player || this.isPaused) return;
+      const current = this.player.getCurrentTime();
+      const now = performance.now();
+
+      const segIndex = this.segments.findIndex(
+        seg => current >= seg.startSeconds && current < seg.endSeconds
+      );
+
+      if (segIndex !== this.currentSegmentIndex) {
+        this.currentSegmentIndex = segIndex;
+        this.nextCardAt = segIndex === -1 ? null : now + this.randInterval(1000, 3000);
+      }
+
+      if (segIndex === -1 || !this.nextCardAt || now < this.nextCardAt) return;
+
+      const seg = this.segments[segIndex];
+      const available = seg.vocab.filter(([word]) => !this.activeVocabKeys.has(word));
+      if (!available.length) return;
+
+      if (this.cards.length >= 3) {
+        const oldest = this.cards.shift();
+        clearTimeout(oldest.timerId);
+        this.activeVocabKeys.delete(oldest.word);
+      }
+
+      const [word, translation] = available[Math.floor(Math.random() * available.length)];
+      this.addCard(word, translation);
+      this.nextCardAt = now + this.randInterval(1000, 3000);
+    },
+
+    addCard(word, translation) {
+      const id = ++this.cardCounter;
+      const expireAt = performance.now() + 4000;
+      const timerId = setTimeout(() => this.dismiss(id), 4000);
+      this.cards.push({ id, word, translation, timerId, expireAt });
+      this.activeVocabKeys.add(word);
+    },
+
+    dismiss(id) {
+      const idx = this.cards.findIndex(c => c.id === id);
+      if (idx === -1) return;
+      clearTimeout(this.cards[idx].timerId);
+      this.activeVocabKeys.delete(this.cards[idx].word);
+      this.cards.splice(idx, 1);
+    },
+
+    onStateChange(event) {
+      // YT.PlayerState: PLAYING=1, PAUSED=2
+      if (event.data === 1) {
+        this.isPaused = false;
+        this.resumeCards();
+      } else if (event.data === 2) {
+        this.isPaused = true;
+        this.pauseCards();
+      }
+    },
+
+    pauseCards() {
+      const now = performance.now();
+      this.pausedCardRemainders = this.cards.map(card => {
+        clearTimeout(card.timerId);
+        return { id: card.id, remaining: Math.max(0, card.expireAt - now) };
+      });
+    },
+
+    resumeCards() {
+      const now = performance.now();
+      for (const { id, remaining } of this.pausedCardRemainders) {
+        const card = this.cards.find(c => c.id === id);
+        if (!card) continue;
+        card.expireAt = now + remaining;
+        card.timerId = setTimeout(() => this.dismiss(id), remaining);
+      }
+      this.pausedCardRemainders = [];
+    },
+
+    async switchTranslation() {
+      const resp = await fetch(
+        `/api/videos/${this.youtubeId}/translations/${this.selectedNativeLang}/?level=${this.selectedLevel}`
+      );
+      if (!resp.ok) return;
+      const data = await resp.json();
+      this.cards.forEach(c => clearTimeout(c.timerId));
+      this.cards = [];
+      this.activeVocabKeys = new Set();
+      this.currentSegmentIndex = -1;
+      this.nextCardAt = null;
+      this.loadSegments(data.segments);
+    },
+
+    onLangChange() {
+      const levels = this.levelsForLang;
+      if (!levels.includes(this.selectedLevel)) {
+        this.selectedLevel = levels[0] ?? 'INTERMEDIATE';
+      }
+      this.switchTranslation();
+    },
+
+    parseTimestamp(ts) {
+      if (!ts) return 0;
+      const s = String(ts);
+      // Handle HH:MM:SS.mmm or H:MM:SS or M:SS
+      const parts = s.split(':');
+      if (parts.length === 3) {
+        return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + parseFloat(parts[2]);
+      }
+      if (parts.length === 2) {
+        return Number(parts[0]) * 60 + parseFloat(parts[1]);
+      }
+      return parseFloat(s);
+    },
+
+    randInterval(minMs, maxMs) {
+      return minMs + Math.random() * (maxMs - minMs);
+    },
+  };
+}
+</script>
+{% endblock %}

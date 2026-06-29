@@ -32,6 +32,8 @@ REST_FRAMEWORK = {
     ],
 }
 
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
